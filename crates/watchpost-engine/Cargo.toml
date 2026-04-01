@@ -1,0 +1,7 @@
+[package]
+name = "watchpost-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+watchpost-types.workspace = true

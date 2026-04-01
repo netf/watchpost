@@ -1,0 +1,7 @@
+[package]
+name = "watchpost-notify"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+watchpost-types.workspace = true

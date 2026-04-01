@@ -1,0 +1,7 @@
+[package]
+name = "watchpost-analyzer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+watchpost-types.workspace = true

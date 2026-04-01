@@ -1,6 +1,61 @@
-[package]
-name = "watchpost"
+[workspace]
+resolver = "2"
+members = [
+    "crates/watchpost-types",
+    "crates/watchpost-collector",
+    "crates/watchpost-engine",
+    "crates/watchpost-rules",
+    "crates/watchpost-analyzer",
+    "crates/watchpost-policy",
+    "crates/watchpost-notify",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+watchpost-types = { path = "crates/watchpost-types" }
+watchpost-collector = { path = "crates/watchpost-collector" }
+watchpost-engine = { path = "crates/watchpost-engine" }
+watchpost-rules = { path = "crates/watchpost-rules" }
+watchpost-analyzer = { path = "crates/watchpost-analyzer" }
+watchpost-policy = { path = "crates/watchpost-policy" }
+watchpost-notify = { path = "crates/watchpost-notify" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yml = "0.0.12"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+clap = { version = "4", features = ["derive"] }
+toml = "0.8"
+dashmap = "6"
+anyhow = "1"
+thiserror = "2"
+
+[package]
+name = "watchpost"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
+watchpost-types.workspace = true
+watchpost-collector.workspace = true
+watchpost-engine.workspace = true
+watchpost-rules.workspace = true
+watchpost-analyzer.workspace = true
+watchpost-policy.workspace = true
+watchpost-notify.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+toml.workspace = true
+anyhow.workspace = true
+serde.workspace = true
