@@ -5,8 +5,7 @@ use crate::context::ActionContext;
 use crate::events::EnrichedEvent;
 use crate::scoring::SuspicionScore;
 
-/// Whether correlated events share matching arguments.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ArgumentMatch {
     Positive,
@@ -14,8 +13,7 @@ pub enum ArgumentMatch {
     None,
 }
 
-/// A signal produced during event correlation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CorrelationSignal {
     pub lineage_match: bool,
     pub temporal_weight: f64,

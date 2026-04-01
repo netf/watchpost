@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// All fields use `#[serde(default)]` so that an empty TOML file
 /// produces a fully valid configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WatchpostConfig {
     pub daemon: DaemonConfig,
@@ -13,22 +13,11 @@ pub struct WatchpostConfig {
     pub advanced: AdvancedConfig,
 }
 
-impl Default for WatchpostConfig {
-    fn default() -> Self {
-        Self {
-            daemon: DaemonConfig::default(),
-            enforcement: EnforcementConfig::default(),
-            notify: NotifyConfig::default(),
-            advanced: AdvancedConfig::default(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DaemonConfig {
     pub api_key: String,
-    pub log_level: String,
+    pub log_level: LogLevel,
     pub data_dir: String,
 }
 
@@ -36,13 +25,28 @@ impl Default for DaemonConfig {
     fn default() -> Self {
         Self {
             api_key: String::new(),
-            log_level: "warn".to_owned(),
+            log_level: LogLevel::default(),
             data_dir: "/var/lib/watchpost".to_owned(),
         }
     }
 }
 
-/// Whether the daemon enforces actions or just advises.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+impl Default for LogLevel {
+    fn default() -> Self {
+        Self::Warn
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum EnforcementMode {
@@ -56,18 +60,10 @@ impl Default for EnforcementMode {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EnforcementConfig {
     pub mode: EnforcementMode,
-}
-
-impl Default for EnforcementConfig {
-    fn default() -> Self {
-        Self {
-            mode: EnforcementMode::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,7 +82,7 @@ impl Default for NotifyConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AdvancedConfig {
     pub tetragon: TetragonConfig,
@@ -97,21 +93,6 @@ pub struct AdvancedConfig {
     pub profiles: ProfilesConfig,
     pub rules: RulesConfig,
     pub policy: PolicyConfig,
-}
-
-impl Default for AdvancedConfig {
-    fn default() -> Self {
-        Self {
-            tetragon: TetragonConfig::default(),
-            collector: CollectorConfig::default(),
-            engine: EngineConfig::default(),
-            analyzer: AnalyzerConfig::default(),
-            gate: GateConfig::default(),
-            profiles: ProfilesConfig::default(),
-            rules: RulesConfig::default(),
-            policy: PolicyConfig::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,10 +151,23 @@ impl Default for EngineConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AnalyzerBackend {
+    Anthropic,
+    Ollama,
+}
+
+impl Default for AnalyzerBackend {
+    fn default() -> Self {
+        Self::Anthropic
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AnalyzerConfig {
-    pub backend: String,
+    pub backend: AnalyzerBackend,
     pub model: String,
     pub ollama_endpoint: Option<String>,
     pub ollama_model: Option<String>,
@@ -185,7 +179,7 @@ pub struct AnalyzerConfig {
 impl Default for AnalyzerConfig {
     fn default() -> Self {
         Self {
-            backend: "anthropic".to_owned(),
+            backend: AnalyzerBackend::default(),
             model: "claude-haiku-4-5-20251001".to_owned(),
             ollama_endpoint: None,
             ollama_model: None,
@@ -196,11 +190,24 @@ impl Default for AnalyzerConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GateMode {
+    Enforce,
+    Advisory,
+}
+
+impl Default for GateMode {
+    fn default() -> Self {
+        Self::Enforce
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GateConfig {
     pub enabled: bool,
-    pub mode: String,
+    pub mode: GateMode,
     pub timeout_ms: u64,
     pub allowlist_path: String,
 }
@@ -209,7 +216,7 @@ impl Default for GateConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            mode: "enforce".to_owned(),
+            mode: GateMode::default(),
             timeout_ms: 5000,
             allowlist_path: "/var/lib/watchpost/gate_allowlist.db".to_owned(),
         }
@@ -269,7 +276,7 @@ mod tests {
         let config: WatchpostConfig = toml::from_str("").unwrap();
         assert_eq!(config.enforcement.mode, EnforcementMode::Autonomous);
         assert_eq!(config.daemon.data_dir, "/var/lib/watchpost");
-        assert_eq!(config.daemon.log_level, "warn");
+        assert_eq!(config.daemon.log_level, LogLevel::Warn);
         assert!(config.daemon.api_key.is_empty());
         assert!(config.notify.desktop);
         assert!(config.notify.webhook_url.is_none());
@@ -282,7 +289,9 @@ mod tests {
         assert_eq!(config.advanced.engine.fast_path_threshold, 0.7);
         assert_eq!(config.advanced.analyzer.model, "claude-haiku-4-5-20251001");
         assert_eq!(config.advanced.analyzer.max_analyses_per_minute, 10);
+        assert_eq!(config.advanced.analyzer.backend, AnalyzerBackend::Anthropic);
         assert!(config.advanced.gate.enabled);
+        assert_eq!(config.advanced.gate.mode, GateMode::Enforce);
         assert_eq!(config.advanced.policy.learning_threshold, 5);
         assert!(config.advanced.policy.auto_activate_reactive);
     }
@@ -298,7 +307,7 @@ api_key = "sk-test"
 mode = "advisory"
 "#;
         let config: WatchpostConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.daemon.log_level, "debug");
+        assert_eq!(config.daemon.log_level, LogLevel::Debug);
         assert_eq!(config.daemon.api_key, "sk-test");
         assert_eq!(config.enforcement.mode, EnforcementMode::Advisory);
         // Unchanged defaults

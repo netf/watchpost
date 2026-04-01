@@ -4,7 +4,6 @@ use uuid::Uuid;
 
 use crate::context::ActionContext;
 
-/// The type of file access observed.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum FileAccessType {
@@ -13,7 +12,7 @@ pub enum FileAccessType {
 }
 
 /// The kind of kernel event observed via Tetragon.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum EventKind {
     ProcessExec {
@@ -58,14 +57,23 @@ pub struct TetragonEvent {
     pub timestamp: DateTime<Utc>,
     pub kind: EventKind,
     pub process_id: u32,
-    pub binary: String,
-    pub args: Vec<String>,
     pub parent_id: Option<u32>,
     pub policy_name: Option<String>,
 }
 
+impl TetragonEvent {
+    /// Returns the binary path for this event, extracted from the event kind.
+    pub fn binary(&self) -> Option<&str> {
+        match &self.kind {
+            EventKind::ProcessExec { binary, .. } => Some(binary),
+            EventKind::ScriptExec { script_path, .. } => Some(script_path),
+            _ => None,
+        }
+    }
+}
+
 /// A single entry in a process ancestry chain.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AncestryEntry {
     pub pid: u32,
     pub binary_path: String,
@@ -98,8 +106,6 @@ mod tests {
                     uid: 1000,
                 },
                 process_id: 12345,
-                binary: "/usr/bin/curl".to_owned(),
-                args: vec!["curl".to_owned(), "https://evil.com".to_owned()],
                 parent_id: Some(12344),
                 policy_name: Some("npm-network".to_owned()),
             },
@@ -128,8 +134,7 @@ mod tests {
     fn enriched_event_json_round_trip() {
         let event = sample_enriched_event();
         let json = serde_json::to_string(&event).expect("serialize");
-        let deserialized: EnrichedEvent =
-            serde_json::from_str(&json).expect("deserialize");
+        let deserialized: EnrichedEvent = serde_json::from_str(&json).expect("deserialize");
 
         assert_eq!(deserialized.event.id, event.event.id);
         assert_eq!(deserialized.event.process_id, event.event.process_id);
@@ -147,10 +152,16 @@ mod tests {
     }
 
     #[test]
+    fn binary_accessor_works() {
+        let event = sample_enriched_event();
+        assert_eq!(event.event.binary(), Some("/usr/bin/curl"));
+    }
+
+    #[test]
     fn enriched_event_json_contains_expected_fields() {
         let event = sample_enriched_event();
         let json = serde_json::to_string_pretty(&event).expect("serialize");
-        assert!(json.contains("\"process_exec\"") || json.contains("process_exec"));
+        assert!(json.contains("process_exec"));
         assert!(json.contains("evil.com"));
         assert!(json.contains("npm"));
     }

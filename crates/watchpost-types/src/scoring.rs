@@ -1,25 +1,39 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// A suspicion score clamped to [0.0, 1.0].
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SuspicionScore(f64);
+/// Creates a newtype wrapper around f64 that clamps to [0.0, 1.0].
+macro_rules! clamped_unit_f64 {
+    ($(#[$meta:meta])* $name:ident) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, PartialOrd)]
+        pub struct $name(f64);
 
-impl SuspicionScore {
-    pub fn new(val: f64) -> Self {
-        Self(val.clamp(0.0, 1.0))
-    }
+        impl $name {
+            pub fn new(val: f64) -> Self {
+                Self(val.clamp(0.0, 1.0))
+            }
 
-    pub fn value(&self) -> f64 {
-        self.0
-    }
+            pub fn value(&self) -> f64 {
+                self.0
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{:.2}", self.0)
+            }
+        }
+    };
 }
 
-impl fmt::Display for SuspicionScore {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:.2}", self.0)
-    }
-}
+clamped_unit_f64!(
+    /// A suspicion score clamped to [0.0, 1.0].
+    SuspicionScore
+);
+clamped_unit_f64!(
+    /// A confidence value clamped to [0.0, 1.0].
+    Confidence
+);
 
 /// Named indicators that contribute to a suspicion score.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -74,5 +88,29 @@ mod tests {
     fn suspicion_score_display() {
         let score = SuspicionScore::new(0.756);
         assert_eq!(format!("{score}"), "0.76");
+    }
+
+    #[test]
+    fn confidence_clamps_high() {
+        let c = Confidence::new(1.5);
+        assert!((c.value() - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn confidence_clamps_low() {
+        let c = Confidence::new(-0.1);
+        assert!((c.value() - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn confidence_preserves_valid() {
+        let c = Confidence::new(0.75);
+        assert!((c.value() - 0.75).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn clamped_types_support_comparison() {
+        assert!(SuspicionScore::new(0.7) > SuspicionScore::new(0.3));
+        assert!(Confidence::new(0.9) > Confidence::new(0.1));
     }
 }
