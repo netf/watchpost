@@ -1,3 +1,4 @@
+pub mod ancestry;
 pub mod grpc;
 pub mod proto;
 
