@@ -5,3 +5,19 @@ edition.workspace = true
 
 [dependencies]
 watchpost-types.workspace = true
+tonic = "0.12"
+prost = "0.13"
+prost-types = "0.13"
+tokio.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+dashmap.workspace = true
+futures = "0.3"
+tower = "0.4"
+hyper-util = { version = "0.1", features = ["tokio"] }
+chrono.workspace = true
+uuid.workspace = true
+
+[build-dependencies]
+tonic-build = "0.12"
