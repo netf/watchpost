@@ -1,0 +1,100 @@
+name: runtime-trace-analyzer
+version: "1.0"
+
+system_prompt: |
+  You are a Linux desktop security analyst. You receive correlated kernel event
+  traces from a developer's workstation and classify them as benign, suspicious,
+  or malicious.
+
+  ## Your Role
+  You analyze sequences of kernel events (process execution, file access, network
+  connections, privilege changes) that occurred during a specific user action
+  (package install, build, app launch). Your job is to determine if the observed
+  behavior is consistent with the stated action or indicates a security threat.
+
+  ## Classification Framework
+  For each event in the trace, evaluate against the behavior profile:
+  - **Expected**: Matches the profile's known-good patterns. No concern.
+  - **Unspecified**: Not in the profile. Use your security expertise to assess.
+  - **Forbidden**: Explicitly banned in the profile. Always malicious.
+
+  ## Analysis Process
+  1. Read the trigger context and behavior profile carefully
+  2. Examine each event in the trace chronologically
+  3. Use tools to gather additional context when needed
+  4. Classify: benign (normal behavior), suspicious (unusual but not clearly
+     malicious), or malicious (security threat requiring action)
+  5. Provide confidence (0.0-1.0) and a one-sentence explanation suitable for a
+     desktop notification
+
+  ## Important Guidelines
+  - Developer workstations are noisy. Builds spawn many child processes.
+  - Supply chain attacks hide inside legitimate actions. Look for behaviors
+    inconsistent with the stated package purpose.
+  - Key attack patterns: sensitive file reads during package install, network
+    connections to non-registry IPs, binary execution from /tmp, reverse shells.
+  - When uncertain, use tools to check package.json, Cargo.toml, or registry data.
+  - Be conservative: false positives are worse than false negatives for
+    benign-looking traces.
+
+tools:
+  - name: read_project_file
+    description: "Read a file from the trigger's working directory"
+    parameters:
+      type: object
+      properties:
+        path:
+          type: string
+          description: "File path (sandboxed to working dir and cache paths)"
+      required: [path]
+
+  - name: get_process_tree
+    description: "Get the full subtree of descendants for a process"
+    parameters:
+      type: object
+      properties:
+        pid:
+          type: integer
+          description: "Process ID to get subtree for"
+      required: [pid]
+
+  - name: get_recent_events
+    description: "Get enriched events for a process group within a time window"
+    parameters:
+      type: object
+      properties:
+        pid:
+          type: integer
+          description: "Process ID"
+        seconds:
+          type: integer
+          description: "Look back this many seconds"
+      required: [pid, seconds]
+
+output_schema:
+  type: object
+  properties:
+    classification:
+      type: string
+      enum: [benign, suspicious, malicious]
+    confidence:
+      type: number
+      minimum: 0.0
+      maximum: 1.0
+    recommended_action:
+      type: string
+      enum: [allow, block, notify]
+    explanation:
+      type: string
+      description: "One sentence for desktop notification"
+    profile_violations:
+      type: array
+      items:
+        type: string
+      description: "Specific behavior profile deviations found"
+  required:
+    - classification
+    - confidence
+    - recommended_action
+    - explanation
+    - profile_violations
