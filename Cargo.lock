@@ -2692,6 +2692,8 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+ "watchpost-collector",
+ "watchpost-rules",
  "watchpost-types",
 ]
 
