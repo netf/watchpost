@@ -303,13 +303,8 @@ pub fn fallback_analysis(script_content: &str) -> GateVerdict {
     let lower = script_content.to_lowercase();
 
     let mut found_patterns: Vec<&str> = Vec::new();
-    for pattern in SUSPICIOUS_PATTERNS {
-        if lower.contains(&pattern.to_lowercase()) {
-            found_patterns.push(pattern);
-        }
-    }
-    for pattern in EVAL_PATTERNS {
-        if lower.contains(&pattern.to_lowercase()) {
+    for pattern in SUSPICIOUS_PATTERNS.iter().chain(EVAL_PATTERNS.iter()) {
+        if lower.contains(*pattern) {
             found_patterns.push(pattern);
         }
     }
