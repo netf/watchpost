@@ -1,0 +1,46 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: watchpost-pip-monitoring
+spec:
+  kprobes:
+    - call: "tcp_connect"
+      syscall: false
+      args:
+        - index: 0
+          type: "sock"
+      selectors:
+        - matchBinaries:
+            - operator: In
+              values:
+                - "/usr/bin/pip"
+                - "/usr/bin/pip3"
+                - "/usr/bin/python3"
+                - "/usr/bin/pipx"
+                - "/usr/bin/uv"
+                - "/usr/local/bin/pip"
+                - "/usr/local/bin/pip3"
+                - "/usr/local/bin/python3"
+          matchActions:
+            - action: Post
+  lsmhooks:
+    - hook: "security_file_permission"
+      args:
+        - index: 0
+          type: "file"
+        - index: 1
+          type: "int"
+      selectors:
+        - matchBinaries:
+            - operator: In
+              values:
+                - "/usr/bin/pip"
+                - "/usr/bin/pip3"
+                - "/usr/bin/python3"
+                - "/usr/bin/pipx"
+                - "/usr/bin/uv"
+                - "/usr/local/bin/pip"
+                - "/usr/local/bin/pip3"
+                - "/usr/local/bin/python3"
+          matchActions:
+            - action: Post

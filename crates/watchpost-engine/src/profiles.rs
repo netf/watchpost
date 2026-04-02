@@ -525,4 +525,164 @@ mod tests {
             "expected at least 4 TracingPolicy YAML files, found {count}"
         );
     }
+
+    #[test]
+    fn toolchain_monitoring_policies_are_valid_and_well_structured() {
+        let policies_dir =
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../policies"));
+
+        let toolchain_policies = [
+            ("npm-monitoring.yaml", "watchpost-npm-monitoring"),
+            ("cargo-monitoring.yaml", "watchpost-cargo-monitoring"),
+            ("pip-monitoring.yaml", "watchpost-pip-monitoring"),
+        ];
+
+        for (filename, expected_name) in &toolchain_policies {
+            let path = policies_dir.join(filename);
+            assert!(
+                path.exists(),
+                "toolchain policy file should exist: {}",
+                path.display()
+            );
+
+            let contents = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("should read {}: {e}", path.display()));
+
+            let value: serde_yml::Value = serde_yml::from_str(&contents)
+                .unwrap_or_else(|e| panic!("{} should be valid YAML: {e}", path.display()));
+
+            // Check apiVersion
+            assert_eq!(
+                value["apiVersion"].as_str(),
+                Some("cilium.io/v1alpha1"),
+                "{filename}: apiVersion should be cilium.io/v1alpha1"
+            );
+
+            // Check kind
+            assert_eq!(
+                value["kind"].as_str(),
+                Some("TracingPolicy"),
+                "{filename}: kind should be TracingPolicy"
+            );
+
+            // Check metadata.name matches the expected naming convention
+            assert_eq!(
+                value["metadata"]["name"].as_str(),
+                Some(*expected_name),
+                "{filename}: metadata.name should be {expected_name}"
+            );
+
+            // Check spec.kprobes exists with tcp_connect
+            let kprobes = &value["spec"]["kprobes"];
+            assert!(
+                kprobes.is_sequence(),
+                "{filename}: spec.kprobes should be a list"
+            );
+            let kprobe_call = kprobes[0]["call"].as_str();
+            assert_eq!(
+                kprobe_call,
+                Some("tcp_connect"),
+                "{filename}: first kprobe should be tcp_connect"
+            );
+
+            // Check spec.lsmhooks exists with security_file_permission
+            let lsmhooks = &value["spec"]["lsmhooks"];
+            assert!(
+                lsmhooks.is_sequence(),
+                "{filename}: spec.lsmhooks should be a list"
+            );
+            let lsm_hook = lsmhooks[0]["hook"].as_str();
+            assert_eq!(
+                lsm_hook,
+                Some("security_file_permission"),
+                "{filename}: first lsmhook should be security_file_permission"
+            );
+
+            // Check that matchBinaries uses Post action (observe only)
+            let kprobe_action = kprobes[0]["selectors"][0]["matchActions"][0]["action"].as_str();
+            assert_eq!(
+                kprobe_action,
+                Some("Post"),
+                "{filename}: kprobe matchActions should use Post action"
+            );
+
+            let lsm_action = lsmhooks[0]["selectors"][0]["matchActions"][0]["action"].as_str();
+            assert_eq!(
+                lsm_action,
+                Some("Post"),
+                "{filename}: lsmhook matchActions should use Post action"
+            );
+        }
+    }
+
+    #[test]
+    fn toolchain_policy_names_follow_convention() {
+        let policies_dir =
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../policies"));
+
+        // All monitoring policies must follow the naming convention:
+        // watchpost-{ecosystem}-monitoring
+        let monitoring_files: Vec<_> = std::fs::read_dir(policies_dir)
+            .expect("should read policies dir")
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path()
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.ends_with("-monitoring.yaml"))
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        assert!(
+            monitoring_files.len() >= 3,
+            "expected at least 3 monitoring policy files, found {}",
+            monitoring_files.len()
+        );
+
+        for entry in &monitoring_files {
+            let path = entry.path();
+            let contents = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("should read {}: {e}", path.display()));
+
+            let value: serde_yml::Value = serde_yml::from_str(&contents)
+                .unwrap_or_else(|e| panic!("{} should be valid YAML: {e}", path.display()));
+
+            let name = value["metadata"]["name"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{}: metadata.name should be a string", path.display()));
+
+            assert!(
+                name.starts_with("watchpost-") && name.ends_with("-monitoring"),
+                "{}: policy name '{}' should match watchpost-{{ecosystem}}-monitoring pattern",
+                path.display(),
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn total_tracing_policy_count_includes_toolchain() {
+        let policies_dir =
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../policies"));
+        let entries = std::fs::read_dir(policies_dir)
+            .expect("should be able to read policies/ directory");
+
+        let mut count = 0;
+        for entry in entries {
+            let entry = entry.expect("directory entry should be readable");
+            let path = entry.path();
+            let ext = path.extension().and_then(|e| e.to_str());
+            if ext != Some("yaml") && ext != Some("yml") {
+                continue;
+            }
+            count += 1;
+        }
+
+        // 5 base + 3 toolchain = 8 total
+        assert!(
+            count >= 8,
+            "expected at least 8 TracingPolicy YAML files (5 base + 3 toolchain), found {count}"
+        );
+    }
 }

@@ -44,10 +44,56 @@ pub async fn run_init(api_key: Option<String>) -> Result<()> {
         ("flatpak", "Flatpak"),
     ];
 
+    // Track which ecosystems are detected for toolchain-specific policies.
+    let mut npm_detected = false;
+    let mut cargo_detected = false;
+    let mut pip_detected = false;
+
     for (binary, label) in &toolchains {
         if which_exists(binary) {
             println!("  [x] {label} ({binary})");
+            match *binary {
+                "npm" | "npx" | "yarn" | "pnpm" => npm_detected = true,
+                "cargo" => cargo_detected = true,
+                "pip" | "pip3" | "uv" => pip_detected = true,
+                _ => {}
+            }
         }
+    }
+
+    // Also check for additional ecosystem binaries not in the general list.
+    for bin in &["npx", "yarn", "pnpm"] {
+        if which_exists(bin) {
+            npm_detected = true;
+        }
+    }
+    if which_exists("uv") {
+        pip_detected = true;
+    }
+
+    // 2b. Report toolchain policies
+    let toolchain_policies: Vec<&str> = {
+        let mut v = Vec::new();
+        if npm_detected {
+            v.push("npm-monitoring.yaml");
+        }
+        if cargo_detected {
+            v.push("cargo-monitoring.yaml");
+        }
+        if pip_detected {
+            v.push("pip-monitoring.yaml");
+        }
+        v
+    };
+
+    let toolchain_policy_count = toolchain_policies.len();
+
+    println!(
+        "\nTetragon policies installed (5 base + {} toolchain)",
+        toolchain_policy_count
+    );
+    for name in &toolchain_policies {
+        println!("  + {name}");
     }
 
     // 3. Generate config

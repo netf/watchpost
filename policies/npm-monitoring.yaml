@@ -1,0 +1,46 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: watchpost-npm-monitoring
+spec:
+  kprobes:
+    - call: "tcp_connect"
+      syscall: false
+      args:
+        - index: 0
+          type: "sock"
+      selectors:
+        - matchBinaries:
+            - operator: In
+              values:
+                - "/usr/bin/node"
+                - "/usr/bin/npm"
+                - "/usr/bin/npx"
+                - "/usr/bin/yarn"
+                - "/usr/bin/pnpm"
+                - "/usr/local/bin/node"
+                - "/usr/local/bin/npm"
+                - "/usr/local/bin/npx"
+          matchActions:
+            - action: Post
+  lsmhooks:
+    - hook: "security_file_permission"
+      args:
+        - index: 0
+          type: "file"
+        - index: 1
+          type: "int"
+      selectors:
+        - matchBinaries:
+            - operator: In
+              values:
+                - "/usr/bin/node"
+                - "/usr/bin/npm"
+                - "/usr/bin/npx"
+                - "/usr/bin/yarn"
+                - "/usr/bin/pnpm"
+                - "/usr/local/bin/node"
+                - "/usr/local/bin/npm"
+                - "/usr/local/bin/npx"
+          matchActions:
+            - action: Post
