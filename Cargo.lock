@@ -2785,6 +2785,17 @@ dependencies = [
 name = "watchpost-policy"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "chrono",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serde_yml",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "uuid",
  "watchpost-types",
 ]
 
