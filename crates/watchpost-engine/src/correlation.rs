@@ -87,7 +87,7 @@ impl ThreeSignalCorrelator {
                     ecosystem,
                     package_name,
                     ..
-                } => (format!("package_install_{}", ecosystem_str(ecosystem)), package_name.clone()),
+                } => (format!("package_install_{}", ecosystem.as_str()), package_name.clone()),
                 ActionContext::Build { toolchain, .. } => {
                     (format!("build_{toolchain}"), None)
                 }
@@ -292,25 +292,16 @@ impl ThreeSignalCorrelator {
     }
 }
 
-/// Convert an `Ecosystem` to a string label for persistence.
-fn ecosystem_str(ecosystem: &Ecosystem) -> &'static str {
-    match ecosystem {
-        Ecosystem::Npm => "npm",
-        Ecosystem::Pip => "pip",
-        Ecosystem::Cargo => "cargo",
-    }
-}
-
 /// Convert an `EventKind` to a short string label for persistence.
-fn event_kind_str(kind: &EventKind) -> String {
+fn event_kind_str(kind: &EventKind) -> &'static str {
     match kind {
-        EventKind::ProcessExec { .. } => "ProcessExec".to_string(),
-        EventKind::ProcessExit { .. } => "ProcessExit".to_string(),
-        EventKind::FileAccess { .. } => "FileAccess".to_string(),
-        EventKind::NetworkConnect { .. } => "NetworkConnect".to_string(),
-        EventKind::PrivilegeChange { .. } => "PrivilegeChange".to_string(),
-        EventKind::DnsQuery { .. } => "DnsQuery".to_string(),
-        EventKind::ScriptExec { .. } => "ScriptExec".to_string(),
+        EventKind::ProcessExec { .. } => "ProcessExec",
+        EventKind::ProcessExit { .. } => "ProcessExit",
+        EventKind::FileAccess { .. } => "FileAccess",
+        EventKind::NetworkConnect { .. } => "NetworkConnect",
+        EventKind::PrivilegeChange { .. } => "PrivilegeChange",
+        EventKind::DnsQuery { .. } => "DnsQuery",
+        EventKind::ScriptExec { .. } => "ScriptExec",
     }
 }
 

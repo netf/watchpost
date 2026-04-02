@@ -49,7 +49,7 @@ impl WeightOverrides {
     /// indicator. Increments the override count and recomputes the weight
     /// factor.
     pub fn record_override(&mut self, indicator: &ScoreIndicator) {
-        let key = indicator_key(indicator);
+        let key = indicator_key(indicator).to_owned();
         let entry = self.overrides.entry(key).or_insert(IndicatorOverride {
             override_count: 0,
             total_fires: 0,
@@ -66,7 +66,7 @@ impl WeightOverrides {
     /// Record that an indicator fired (regardless of whether the user
     /// overrode it). Used to compute the override ratio.
     pub fn record_fire(&mut self, indicator: &ScoreIndicator) {
-        let key = indicator_key(indicator);
+        let key = indicator_key(indicator).to_owned();
         let entry = self.overrides.entry(key).or_insert(IndicatorOverride {
             override_count: 0,
             total_fires: 0,
@@ -81,7 +81,7 @@ impl WeightOverrides {
     pub fn get_weight_factor(&self, indicator: &ScoreIndicator) -> f64 {
         let key = indicator_key(indicator);
         self.overrides
-            .get(&key)
+            .get(key)
             .map(|o| o.weight_factor)
             .unwrap_or(1.0)
     }
@@ -94,14 +94,28 @@ impl WeightOverrides {
     }
 }
 
-/// Compute a HashMap key from a `ScoreIndicator` using its serde name.
-fn indicator_key(indicator: &ScoreIndicator) -> String {
-    // ScoreIndicator derives Serialize with `rename_all = "snake_case"`, so we
-    // can serialise it to get the canonical name.
-    serde_json::to_string(indicator)
-        .unwrap_or_default()
-        .trim_matches('"')
-        .to_owned()
+/// Map a `ScoreIndicator` to a stable string key for persistence.
+fn indicator_key(indicator: &ScoreIndicator) -> &'static str {
+    match indicator {
+        ScoreIndicator::NonRegistryNetwork => "non_registry_network",
+        ScoreIndicator::MaliciousIp => "malicious_ip",
+        ScoreIndicator::SensitiveFileRead => "sensitive_file_read",
+        ScoreIndicator::SensitiveFileWrite => "sensitive_file_write",
+        ScoreIndicator::TempDirExec => "temp_dir_exec",
+        ScoreIndicator::ShellFromPackageManager => "shell_from_package_manager",
+        ScoreIndicator::LdPreload => "ld_preload",
+        ScoreIndicator::PrivilegeChange => "privilege_change",
+        ScoreIndicator::HighEntropyDns => "high_entropy_dns",
+        ScoreIndicator::ReverseShellPattern => "reverse_shell_pattern",
+        ScoreIndicator::ObfuscatedContent => "obfuscated_content",
+        ScoreIndicator::AntiForensics => "anti_forensics",
+        ScoreIndicator::NewPackageLowDownloads => "new_package_low_downloads",
+        ScoreIndicator::KnownVulnerability => "known_vulnerability",
+        ScoreIndicator::Typosquatting => "typosquatting",
+        ScoreIndicator::ProvenanceAttested => "provenance_attested",
+        ScoreIndicator::EstablishedPackage => "established_package",
+        ScoreIndicator::NoGithubRelease => "no_github_release",
+    }
 }
 
 /// Recompute the weight factor for a single indicator record.
@@ -159,7 +173,9 @@ impl FeedbackCollector {
         if *count >= self.save_threshold {
             *count = 0;
             let overrides = self.overrides.lock().unwrap();
-            let _ = overrides.save(Path::new(&self.overrides_path));
+            if let Err(e) = overrides.save(Path::new(&self.overrides_path)) {
+                tracing::warn!("failed to save weight overrides: {e:#}");
+            }
         }
     }
 

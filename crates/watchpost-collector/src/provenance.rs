@@ -203,7 +203,7 @@ impl ProvenanceEnricher {
         ecosystem: &Ecosystem,
         package_name: &str,
     ) -> Option<ProvenanceInfo> {
-        let eco_str = ecosystem_str(ecosystem);
+        let eco_str = ecosystem.as_str();
 
         // Check cache first.
         if let Some(cached) = self.cache.get(eco_str, package_name) {
@@ -329,14 +329,7 @@ impl Default for ProvenanceEnricher {
     }
 }
 
-/// Convert an `Ecosystem` to a string key for the cache.
-fn ecosystem_str(eco: &Ecosystem) -> &'static str {
-    match eco {
-        Ecosystem::Npm => "npm",
-        Ecosystem::Pip => "pip",
-        Ecosystem::Cargo => "cargo",
-    }
-}
+// ecosystem_str removed — use Ecosystem::as_str() from watchpost-types
 
 // ===========================================================================
 // Tests

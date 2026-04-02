@@ -9,6 +9,16 @@ pub enum Ecosystem {
     Pip,
 }
 
+impl Ecosystem {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Npm => "npm",
+            Self::Cargo => "cargo",
+            Self::Pip => "pip",
+        }
+    }
+}
+
 /// The inferred context for why an action is happening on the system.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
