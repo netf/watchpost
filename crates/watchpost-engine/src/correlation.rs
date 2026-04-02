@@ -50,8 +50,11 @@ impl ThreeSignalCorrelator {
         self.triggers.register(event)
     }
 
-    /// Deactivate a trigger's session.
+    /// Deactivate a trigger's session and clean up its trace buffer.
     pub fn deactivate_trigger(&self, pid: u32) {
+        if let Some(trigger) = self.triggers.get_trigger_for_pid(pid) {
+            self.trace_buffers.remove(&trigger.id);
+        }
         self.triggers.deactivate_session(pid);
     }
 
@@ -86,9 +89,13 @@ impl ThreeSignalCorrelator {
 
         let (trigger, signal) = best?;
 
-        // Add event to the trace buffer for this trigger.
+        // Add event to the trace buffer for this trigger (capped at 500 to
+        // prevent unbounded growth during long-running operations).
+        const MAX_TRACE_EVENTS: usize = 500;
         let mut buffer = self.trace_buffers.entry(trigger.id).or_default();
-        buffer.push(event.clone());
+        if buffer.len() < MAX_TRACE_EVENTS {
+            buffer.push(event.clone());
+        }
         let buffered_events = buffer.clone();
         drop(buffer);
 
