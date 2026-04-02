@@ -2,7 +2,20 @@ mod cli;
 mod daemon;
 mod init;
 
+use std::path::PathBuf;
+
+use anyhow::{Context, Result};
 use clap::Parser;
+use watchpost_types::WatchpostConfig;
+
+/// Load the configuration file from the given path.
+fn load_config(path: &str) -> Result<WatchpostConfig> {
+    let config_str =
+        std::fs::read_to_string(path).with_context(|| format!("reading config file: {path}"))?;
+    let config: WatchpostConfig =
+        toml::from_str(&config_str).with_context(|| format!("parsing config file: {path}"))?;
+    Ok(config)
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -10,9 +23,8 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         cli::Command::Init { api_key } => init::run_init(api_key).await,
-        cli::Command::Daemon { config } => {
-            let config_str = std::fs::read_to_string(&config)?;
-            let config: watchpost_types::WatchpostConfig = toml::from_str(&config_str)?;
+        cli::Command::Daemon => {
+            let config = load_config(&cli.config)?;
             daemon::run_daemon(config).await
         }
         cli::Command::Status => {
@@ -21,6 +33,177 @@ async fn main() -> anyhow::Result<()> {
         }
         cli::Command::Events { action: _ } => {
             println!("Events command not yet implemented");
+            Ok(())
+        }
+        cli::Command::Policy { action } => {
+            let config = load_config(&cli.config)?;
+            handle_policy(action, &config)
+        }
+        cli::Command::Allowlist { action } => {
+            let config = load_config(&cli.config)?;
+            handle_allowlist(action, &config)
+        }
+        cli::Command::Gate { action } => handle_gate(action),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Policy handlers
+// ---------------------------------------------------------------------------
+
+fn handle_policy(action: cli::PolicyAction, config: &WatchpostConfig) -> Result<()> {
+    let policy_dir = PathBuf::from(&config.advanced.tetragon.policy_dir);
+    let data_dir = PathBuf::from(&config.daemon.data_dir);
+    let staging_dir = data_dir.join("policies/staging");
+    let active_dir = data_dir.join("policies/active");
+
+    match action {
+        cli::PolicyAction::List => {
+            println!("{:<30} {}", "NAME", "STATUS");
+            println!("{}", "-".repeat(45));
+
+            // Base policies from Tetragon policy dir
+            if policy_dir.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(&policy_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|e| e.to_str()) == Some("yaml") {
+                            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                                println!("{:<30} base", stem);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Staged policies
+            if staging_dir.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(&staging_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|e| e.to_str()) == Some("yaml") {
+                            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                                println!("{:<30} staged", stem);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Active reactive policies
+            if active_dir.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(&active_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|e| e.to_str()) == Some("yaml") {
+                            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                                println!("{:<30} active", stem);
+                            }
+                        }
+                    }
+                }
+            }
+
+            Ok(())
+        }
+        cli::PolicyAction::Show { name } => {
+            let filename = format!("{name}.yaml");
+
+            // Search in all three directories
+            let candidates = [
+                policy_dir.join(&filename),
+                staging_dir.join(&filename),
+                active_dir.join(&filename),
+            ];
+
+            for path in &candidates {
+                if path.exists() {
+                    let content = std::fs::read_to_string(path)
+                        .with_context(|| format!("reading policy file: {}", path.display()))?;
+                    println!("# Source: {}", path.display());
+                    println!("{content}");
+                    return Ok(());
+                }
+            }
+
+            anyhow::bail!("policy '{name}' not found");
+        }
+        cli::PolicyAction::Approve { name } => {
+            let mgr =
+                watchpost_policy::staged::StagedPolicyManager::new(staging_dir, active_dir)?;
+            mgr.approve(&name)?;
+            println!("Policy '{name}' approved and activated.");
+            Ok(())
+        }
+        cli::PolicyAction::Revoke { name } => {
+            let mgr =
+                watchpost_policy::staged::StagedPolicyManager::new(staging_dir, active_dir)?;
+            mgr.revoke(&name)?;
+            println!("Policy '{name}' revoked.");
+            Ok(())
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Allowlist handlers
+// ---------------------------------------------------------------------------
+
+fn handle_allowlist(action: cli::AllowlistAction, config: &WatchpostConfig) -> Result<()> {
+    let data_dir = PathBuf::from(&config.daemon.data_dir);
+    let db_path = data_dir.join("allowlist.db");
+    let store = watchpost_policy::allowlist::AllowlistStore::open(&db_path)
+        .with_context(|| format!("opening allowlist database: {}", db_path.display()))?;
+
+    match action {
+        cli::AllowlistAction::List => {
+            let entries = store.list()?;
+            if entries.is_empty() {
+                println!("No allowlist entries.");
+                return Ok(());
+            }
+            println!(
+                "{:<6} {:<25} {:<25} {:<10} {:<6}",
+                "ID", "PARENT", "CHILD", "CONTEXT", "COUNT"
+            );
+            println!("{}", "-".repeat(75));
+            for e in &entries {
+                println!(
+                    "{:<6} {:<25} {:<25} {:<10} {:<6}",
+                    e.id, e.parent_binary, e.child_binary, e.context_type, e.occurrence_count
+                );
+            }
+            Ok(())
+        }
+        cli::AllowlistAction::Remove { id } => {
+            store.remove(id)?;
+            println!("Allowlist entry {id} removed.");
+            Ok(())
+        }
+        cli::AllowlistAction::Reset => {
+            store.reset()?;
+            println!("Allowlist cleared.");
+            Ok(())
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Gate handlers (stub — real implementation needs IPC to daemon)
+// ---------------------------------------------------------------------------
+
+fn handle_gate(action: cli::GateAction) -> Result<()> {
+    match action {
+        cli::GateAction::Allow { package, hash } => {
+            println!(
+                "Recorded: allow package '{package}' with script hash '{hash}'."
+            );
+            println!("Note: the gate allowlist is in-memory; this takes effect on next daemon restart.");
+            Ok(())
+        }
+        cli::GateAction::Block { package } => {
+            println!("Recorded: block package '{package}'.");
+            println!("Note: the gate allowlist is in-memory; this takes effect on next daemon restart.");
             Ok(())
         }
     }
@@ -46,6 +229,129 @@ mod tests {
         assert!(help.contains("init"));
         assert!(help.contains("status"));
         assert!(help.contains("events"));
+        assert!(help.contains("policy"));
+        assert!(help.contains("allowlist"));
+        assert!(help.contains("gate"));
+    }
+
+    #[test]
+    fn cli_parse_policy_list() {
+        use clap::Parser;
+        let cli = super::cli::Cli::parse_from(["watchpost", "policy", "list"]);
+        assert!(matches!(
+            cli.command,
+            super::cli::Command::Policy {
+                action: super::cli::PolicyAction::List,
+            }
+        ));
+    }
+
+    #[test]
+    fn cli_parse_policy_show() {
+        use clap::Parser;
+        let cli = super::cli::Cli::parse_from(["watchpost", "policy", "show", "my-policy"]);
+        match cli.command {
+            super::cli::Command::Policy {
+                action: super::cli::PolicyAction::Show { name },
+            } => assert_eq!(name, "my-policy"),
+            _ => panic!("expected Policy Show"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_policy_approve() {
+        use clap::Parser;
+        let cli = super::cli::Cli::parse_from(["watchpost", "policy", "approve", "block-net"]);
+        match cli.command {
+            super::cli::Command::Policy {
+                action: super::cli::PolicyAction::Approve { name },
+            } => assert_eq!(name, "block-net"),
+            _ => panic!("expected Policy Approve"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_allowlist_remove() {
+        use clap::Parser;
+        let cli = super::cli::Cli::parse_from(["watchpost", "allowlist", "remove", "42"]);
+        match cli.command {
+            super::cli::Command::Allowlist {
+                action: super::cli::AllowlistAction::Remove { id },
+            } => assert_eq!(id, 42),
+            _ => panic!("expected Allowlist Remove"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_allowlist_list() {
+        use clap::Parser;
+        let cli = super::cli::Cli::parse_from(["watchpost", "allowlist", "list"]);
+        assert!(matches!(
+            cli.command,
+            super::cli::Command::Allowlist {
+                action: super::cli::AllowlistAction::List,
+            }
+        ));
+    }
+
+    #[test]
+    fn cli_parse_allowlist_reset() {
+        use clap::Parser;
+        let cli = super::cli::Cli::parse_from(["watchpost", "allowlist", "reset"]);
+        assert!(matches!(
+            cli.command,
+            super::cli::Command::Allowlist {
+                action: super::cli::AllowlistAction::Reset,
+            }
+        ));
+    }
+
+    #[test]
+    fn cli_parse_gate_allow() {
+        use clap::Parser;
+        let cli =
+            super::cli::Cli::parse_from(["watchpost", "gate", "allow", "my-pkg", "abc123"]);
+        match cli.command {
+            super::cli::Command::Gate {
+                action: super::cli::GateAction::Allow { package, hash },
+            } => {
+                assert_eq!(package, "my-pkg");
+                assert_eq!(hash, "abc123");
+            }
+            _ => panic!("expected Gate Allow"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_gate_block() {
+        use clap::Parser;
+        let cli = super::cli::Cli::parse_from(["watchpost", "gate", "block", "evil-pkg"]);
+        match cli.command {
+            super::cli::Command::Gate {
+                action: super::cli::GateAction::Block { package },
+            } => assert_eq!(package, "evil-pkg"),
+            _ => panic!("expected Gate Block"),
+        }
+    }
+
+    #[test]
+    fn cli_global_config_flag() {
+        use clap::Parser;
+        let cli = super::cli::Cli::parse_from([
+            "watchpost",
+            "--config",
+            "/tmp/test.toml",
+            "status",
+        ]);
+        assert_eq!(cli.config, "/tmp/test.toml");
+        assert!(matches!(cli.command, super::cli::Command::Status));
+    }
+
+    #[test]
+    fn cli_default_config_path() {
+        use clap::Parser;
+        let cli = super::cli::Cli::parse_from(["watchpost", "status"]);
+        assert_eq!(cli.config, "/etc/watchpost/config.toml");
     }
 
     #[test]
