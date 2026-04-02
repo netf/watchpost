@@ -1,6 +1,7 @@
 pub mod agent_loop;
 pub mod client;
 pub mod context_builder;
+pub mod gate;
 pub mod rate_limiter;
 pub mod skill;
 pub mod tools;
