@@ -21,5 +21,7 @@ rusqlite.workspace = true
 [dev-dependencies]
 watchpost-rules.workspace = true
 watchpost-collector.workspace = true
+watchpost-analyzer.workspace = true
+watchpost-policy.workspace = true
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile = "3"

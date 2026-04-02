@@ -2766,7 +2766,9 @@ dependencies = [
  "toml",
  "tracing",
  "uuid",
+ "watchpost-analyzer",
  "watchpost-collector",
+ "watchpost-policy",
  "watchpost-rules",
  "watchpost-types",
 ]
