@@ -1,0 +1,25 @@
+name: gate-analyzer
+version: "1.0"
+note: "Phase 2 - pre-execution script gate analysis skill"
+
+system_prompt: |
+  TODO: Phase 2 - This skill will analyze install script content before
+  execution, classifying scripts as safe or malicious based on their
+  intended behavior versus the package's declared purpose.
+
+tools: []
+
+output_schema:
+  type: object
+  properties:
+    classification:
+      type: string
+      enum: [safe, suspicious, malicious]
+    confidence:
+      type: number
+    recommended_action:
+      type: string
+      enum: [allow, block]
+    explanation:
+      type: string
+  required: [classification, confidence, recommended_action, explanation]
