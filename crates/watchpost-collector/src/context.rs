@@ -99,20 +99,9 @@ impl ActionContextInferrer {
             }
         }
 
-        // No known tool found. Check if the last ancestor is a shell (terminal session).
-        if let Some(last) = ancestry.last() {
-            if is_shell(binary_name(last)) {
-                return ActionContext::ShellCommand { tty: None };
-            }
-        }
-
-        // Also check for any shell in the ancestry that might indicate a terminal session.
-        // A common pattern: the process itself runs inside a shell in a terminal.
-        // Check if there is at least one shell in the chain.
-        for entry in ancestry {
-            if is_shell(binary_name(entry)) {
-                return ActionContext::ShellCommand { tty: None };
-            }
+        // No known tool found. If any ancestor is a shell, this is a terminal session.
+        if ancestry.iter().any(|e| is_shell(binary_name(e))) {
+            return ActionContext::ShellCommand { tty: None };
         }
 
         ActionContext::Unknown
