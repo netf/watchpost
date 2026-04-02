@@ -1,4 +1,7 @@
+use std::path::Path;
+
 use dashmap::DashMap;
+use tracing::warn;
 use uuid::Uuid;
 use watchpost_types::{
     util::{CARGO_REGISTRIES, NPM_REGISTRIES, PIP_REGISTRIES},
@@ -6,9 +9,10 @@ use watchpost_types::{
     EventKind,
 };
 
+use crate::persistent::{PersistentTrigger, PersistentWindowStore};
 use crate::tree::ProcessTree;
 use crate::triggers::{ActiveTrigger, ActiveTriggerRegistry};
-use crate::windows::{ImmediateWindow, SessionWindow};
+use crate::windows::{ImmediateWindow, PersistentWindow, SessionWindow};
 
 /// Three-signal correlator that matches incoming events against active triggers
 /// using lineage (process tree), temporal (time windows), and argument (content
@@ -17,6 +21,8 @@ pub struct ThreeSignalCorrelator {
     tree: ProcessTree,
     triggers: ActiveTriggerRegistry,
     immediate_window: ImmediateWindow,
+    persistent_window: PersistentWindow,
+    persistent_store: Option<PersistentWindowStore>,
     /// Accumulated events for each trigger, keyed by trigger ID.
     trace_buffers: DashMap<Uuid, Vec<EnrichedEvent>>,
 }
@@ -31,8 +37,29 @@ impl ThreeSignalCorrelator {
             tree,
             triggers,
             immediate_window: ImmediateWindow::new(immediate_window_ms),
+            persistent_window: PersistentWindow::default(),
+            persistent_store: None,
             trace_buffers: DashMap::new(),
         }
+    }
+
+    /// Create a correlator with a SQLite-backed persistent window store.
+    pub fn with_persistent_store(
+        tree: ProcessTree,
+        triggers: ActiveTriggerRegistry,
+        immediate_window_ms: u64,
+        persistent_window_hours: u64,
+        db_path: &Path,
+    ) -> anyhow::Result<Self> {
+        let store = PersistentWindowStore::open(db_path)?;
+        Ok(Self {
+            tree,
+            triggers,
+            immediate_window: ImmediateWindow::new(immediate_window_ms),
+            persistent_window: PersistentWindow::new(persistent_window_hours),
+            persistent_store: Some(store),
+            trace_buffers: DashMap::new(),
+        })
     }
 
     /// Access the process tree (needed by engine assembly).
@@ -45,9 +72,45 @@ impl ThreeSignalCorrelator {
         &self.triggers
     }
 
-    /// Register a new trigger (delegates to registry).
+    /// Register a new trigger (delegates to registry and persists if store is available).
     pub fn register_trigger(&self, event: &EnrichedEvent) -> Option<Uuid> {
-        self.triggers.register(event)
+        let id = self.triggers.register(event)?;
+
+        // Persist the trigger for the 24-hour window.
+        if let Some(ref store) = self.persistent_store {
+            let binary = match &event.event.kind {
+                EventKind::ProcessExec { binary, .. } => binary.clone(),
+                _ => String::new(),
+            };
+            let (context_type, package_name) = match &event.context {
+                ActionContext::PackageInstall {
+                    ecosystem,
+                    package_name,
+                    ..
+                } => (format!("package_install_{}", ecosystem_str(ecosystem)), package_name.clone()),
+                ActionContext::Build { toolchain, .. } => {
+                    (format!("build_{toolchain}"), None)
+                }
+                ActionContext::FlatpakApp { app_id, .. } => {
+                    (format!("flatpak_{app_id}"), None)
+                }
+                _ => ("unknown".to_string(), None),
+            };
+
+            let persistent = PersistentTrigger {
+                trigger_id: id,
+                process_pid: event.event.process_id,
+                binary,
+                context_type,
+                package_name,
+                start_time: event.event.timestamp,
+            };
+            if let Err(e) = store.save_trigger(&persistent) {
+                warn!(error = %e, "failed to persist trigger");
+            }
+        }
+
+        Some(id)
     }
 
     /// Deactivate a trigger's session and clean up its trace buffer.
@@ -60,17 +123,18 @@ impl ThreeSignalCorrelator {
 
     /// Correlate an incoming event against all active triggers and return a
     /// `CorrelatedTrace` if any trigger matches.
+    ///
+    /// If no active (in-memory) trigger matches, the persistent store is
+    /// consulted for a matching trigger by binary name, providing a weak
+    /// (0.1) correlation signal for delayed-execution detection.
     pub fn correlate(&self, event: &EnrichedEvent) -> Option<CorrelatedTrace> {
         let active_triggers = self.triggers.get_active_triggers();
-        if active_triggers.is_empty() {
-            return None;
-        }
 
-        // Compute signals for each trigger and find the best match.
+        // Compute signals for each active trigger and find the best match.
         let mut best: Option<(ActiveTrigger, CorrelationSignal)> = None;
 
-        for trigger in active_triggers {
-            let signal = self.compute_signal(&trigger, event);
+        for trigger in &active_triggers {
+            let signal = self.compute_signal(trigger, event);
 
             // A trigger correlates if lineage matches or temporal weight > 0.
             if !signal.lineage_match && signal.temporal_weight <= 0.0 {
@@ -83,16 +147,66 @@ impl ThreeSignalCorrelator {
             };
 
             if is_better {
-                best = Some((trigger, signal));
+                best = Some((trigger.clone(), signal));
             }
         }
 
-        let (trigger, signal) = best?;
+        // If we found an active trigger match, use it.
+        if let Some((trigger, signal)) = best {
+            // Save event to persistent store.
+            self.persist_event(&trigger.id, event);
 
-        // Add event to the trace buffer for this trigger (capped at 500 to
-        // prevent unbounded growth during long-running operations).
+            return Some(self.build_trace(trigger.id, &trigger.event, &trigger.event.context, signal, event));
+        }
+
+        // No active trigger matched — check the persistent store for a
+        // delayed-execution correlation.
+        self.correlate_persistent(event)
+    }
+
+    /// Try to correlate an event via the persistent store (weak 0.1 signal).
+    fn correlate_persistent(&self, event: &EnrichedEvent) -> Option<CorrelatedTrace> {
+        let store = self.persistent_store.as_ref()?;
+
+        // Extract the binary from the event for lookup.
+        let binary = match &event.event.kind {
+            EventKind::ProcessExec { binary, .. } => binary.as_str(),
+            _ => return None,
+        };
+
+        let persistent_trigger = match store.find_trigger_for_binary(binary, self.persistent_window.max_age_hours) {
+            Ok(Some(pt)) => pt,
+            Ok(None) => return None,
+            Err(e) => {
+                warn!(error = %e, "persistent store lookup failed");
+                return None;
+            }
+        };
+
+        let weight = self.persistent_window.temporal_weight(
+            persistent_trigger.start_time,
+            event.event.timestamp,
+        );
+        if weight <= 0.0 {
+            return None;
+        }
+
+        let signal = CorrelationSignal {
+            lineage_match: false,
+            temporal_weight: weight,
+            argument_match: ArgumentMatch::None,
+        };
+
+        // Save event to persistent store.
+        self.persist_event(&persistent_trigger.trigger_id, event);
+
+        // Build a trace for the persistent match. Since the original trigger
+        // event is not in memory, we use the current event as the trigger
+        // stand-in and set context from what we know.
+        let trace_id = persistent_trigger.trigger_id;
+
         const MAX_TRACE_EVENTS: usize = 500;
-        let mut buffer = self.trace_buffers.entry(trigger.id).or_default();
+        let mut buffer = self.trace_buffers.entry(trace_id).or_default();
         if buffer.len() < MAX_TRACE_EVENTS {
             buffer.push(event.clone());
         }
@@ -100,13 +214,56 @@ impl ThreeSignalCorrelator {
         drop(buffer);
 
         Some(CorrelatedTrace {
-            id: trigger.id,
-            trigger: Some(trigger.event.clone()),
+            id: trace_id,
+            trigger: None,
             events: buffered_events,
             signals: vec![signal],
             score: None,
-            context: trigger.event.context.clone(),
+            context: event.context.clone(),
         })
+    }
+
+    /// Persist a correlated event to the SQLite store.
+    fn persist_event(&self, trigger_id: &Uuid, event: &EnrichedEvent) {
+        if let Some(ref store) = self.persistent_store {
+            let event_kind = event_kind_str(&event.event.kind);
+            if let Err(e) = store.save_event(
+                trigger_id,
+                &event.event.id,
+                &event_kind,
+                event.event.process_id,
+                &event.event.timestamp,
+            ) {
+                warn!(error = %e, "failed to persist event");
+            }
+        }
+    }
+
+    /// Build a `CorrelatedTrace` from an active trigger match.
+    fn build_trace(
+        &self,
+        trigger_id: Uuid,
+        trigger_event: &EnrichedEvent,
+        context: &ActionContext,
+        signal: CorrelationSignal,
+        event: &EnrichedEvent,
+    ) -> CorrelatedTrace {
+        const MAX_TRACE_EVENTS: usize = 500;
+        let mut buffer = self.trace_buffers.entry(trigger_id).or_default();
+        if buffer.len() < MAX_TRACE_EVENTS {
+            buffer.push(event.clone());
+        }
+        let buffered_events = buffer.clone();
+        drop(buffer);
+
+        CorrelatedTrace {
+            id: trigger_id,
+            trigger: Some(trigger_event.clone()),
+            events: buffered_events,
+            signals: vec![signal],
+            score: None,
+            context: context.clone(),
+        }
     }
 
     /// Compute the three correlation signals for a (trigger, event) pair.
@@ -132,6 +289,28 @@ impl ThreeSignalCorrelator {
             temporal_weight,
             argument_match,
         }
+    }
+}
+
+/// Convert an `Ecosystem` to a string label for persistence.
+fn ecosystem_str(ecosystem: &Ecosystem) -> &'static str {
+    match ecosystem {
+        Ecosystem::Npm => "npm",
+        Ecosystem::Pip => "pip",
+        Ecosystem::Cargo => "cargo",
+    }
+}
+
+/// Convert an `EventKind` to a short string label for persistence.
+fn event_kind_str(kind: &EventKind) -> String {
+    match kind {
+        EventKind::ProcessExec { .. } => "ProcessExec".to_string(),
+        EventKind::ProcessExit { .. } => "ProcessExit".to_string(),
+        EventKind::FileAccess { .. } => "FileAccess".to_string(),
+        EventKind::NetworkConnect { .. } => "NetworkConnect".to_string(),
+        EventKind::PrivilegeChange { .. } => "PrivilegeChange".to_string(),
+        EventKind::DnsQuery { .. } => "DnsQuery".to_string(),
+        EventKind::ScriptExec { .. } => "ScriptExec".to_string(),
     }
 }
 

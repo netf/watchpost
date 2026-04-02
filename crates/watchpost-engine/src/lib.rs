@@ -1,10 +1,13 @@
 pub mod correlation;
 pub mod feedback;
+pub mod persistent;
 pub mod profiles;
 pub mod scoring;
 pub mod tree;
 pub mod triggers;
 pub mod windows;
+
+use std::path::Path;
 
 use tracing::warn;
 use watchpost_types::{ActionContext, CorrelatedTrace, EngineConfig, EnrichedEvent, EventKind};
@@ -30,6 +33,7 @@ impl Engine {
     ///
     /// The engine takes ownership of the `BehaviorProfileStore` (via the scorer)
     /// and creates fresh `ProcessTree` and `ActiveTriggerRegistry` instances.
+    /// No persistent store is created; use `with_data_dir` for persistence.
     pub fn new(config: &EngineConfig, profiles: BehaviorProfileStore) -> Self {
         let tree = ProcessTree::new();
         let triggers = ActiveTriggerRegistry::new();
@@ -47,6 +51,38 @@ impl Engine {
             fast_path_threshold: config.fast_path_threshold,
             llm_threshold: config.llm_threshold,
         }
+    }
+
+    /// Create a new engine with a SQLite-backed persistent correlation window.
+    ///
+    /// The persistent store is created at `{data_dir}/persistent_triggers.db`.
+    pub fn with_data_dir(
+        config: &EngineConfig,
+        profiles: BehaviorProfileStore,
+        data_dir: &Path,
+    ) -> anyhow::Result<Self> {
+        let tree = ProcessTree::new();
+        let triggers = ActiveTriggerRegistry::new();
+        let db_path = data_dir.join("persistent_triggers.db");
+        let correlator = ThreeSignalCorrelator::with_persistent_store(
+            tree,
+            triggers,
+            config.immediate_window_ms,
+            config.persistent_window_hours,
+            &db_path,
+        )?;
+        let scorer = if config.weight_overrides_path.is_empty() {
+            HeuristicScorer::new(profiles)
+        } else {
+            HeuristicScorer::with_feedback(profiles, &config.weight_overrides_path)
+        };
+
+        Ok(Self {
+            correlator,
+            scorer,
+            fast_path_threshold: config.fast_path_threshold,
+            llm_threshold: config.llm_threshold,
+        })
     }
 
     /// Run the engine event loop until the input channel closes.

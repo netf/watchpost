@@ -110,7 +110,9 @@ pub async fn run_daemon(config: WatchpostConfig) -> Result<()> {
     .await
     .context("failed to create Collector")?;
 
-    let engine = Engine::new(&config.advanced.engine, profiles);
+    let engine = Engine::with_data_dir(&config.advanced.engine, profiles, &data_dir)
+        .context("failed to create engine with persistent store")?;
+    info!("engine started with persistent correlation window");
 
     let rule_engine = RuleEngine::new(rules);
 

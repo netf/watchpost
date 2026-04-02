@@ -66,6 +66,45 @@ impl SessionWindow {
     }
 }
 
+/// Persistent window: weak correlation for events that occur hours after
+/// a trigger. Uses a constant weight of 0.1 for any event that matches
+/// a persistent trigger within the configured time horizon (default 24h).
+///
+/// This catches delayed-execution attacks where a package plants a cron job
+/// during install and the payload fires hours later.
+pub struct PersistentWindow {
+    pub max_age_hours: u64,
+}
+
+impl PersistentWindow {
+    pub fn new(max_age_hours: u64) -> Self {
+        Self { max_age_hours }
+    }
+
+    /// Returns 0.1 (constant weak signal) if the event falls within the
+    /// persistent window, 0.0 otherwise.
+    pub fn temporal_weight(
+        &self,
+        trigger_time: DateTime<Utc>,
+        event_time: DateTime<Utc>,
+    ) -> f64 {
+        let elapsed_hours = event_time
+            .signed_duration_since(trigger_time)
+            .num_hours();
+        if elapsed_hours >= 0 && (elapsed_hours as u64) <= self.max_age_hours {
+            0.1
+        } else {
+            0.0
+        }
+    }
+}
+
+impl Default for PersistentWindow {
+    fn default() -> Self {
+        Self::new(24)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +141,21 @@ mod tests {
         let event = trigger + Duration::seconds(10);
         let weight = SessionWindow::temporal_weight(trigger, false, event);
         assert_eq!(weight, 0.0);
+    }
+
+    #[test]
+    fn persistent_window_within_24h() {
+        let w = PersistentWindow::new(24);
+        let trigger = Utc::now();
+        let event = trigger + Duration::hours(6);
+        assert_eq!(w.temporal_weight(trigger, event), 0.1);
+    }
+
+    #[test]
+    fn persistent_window_beyond_24h() {
+        let w = PersistentWindow::new(24);
+        let trigger = Utc::now();
+        let event = trigger + Duration::hours(25);
+        assert_eq!(w.temporal_weight(trigger, event), 0.0);
     }
 }
