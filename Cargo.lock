@@ -1779,6 +1779,13 @@ dependencies = [
 name = "watchpost-rules"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "serde_yml",
+ "thiserror",
+ "tracing",
+ "uuid",
  "watchpost-types",
 ]
 

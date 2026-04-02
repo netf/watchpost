@@ -131,8 +131,7 @@ mod tests {
     use chrono::{Duration, Utc};
     use uuid::Uuid;
     use watchpost_types::{
-        ActionContext, Ecosystem, EnrichedEvent, EventKind, FileAccessType,
-        TetragonEvent,
+        ActionContext, Ecosystem, EnrichedEvent, EventKind, FileAccessType, TetragonEvent,
     };
 
     /// Helper: build an `EnrichedEvent` with the specified parameters.
