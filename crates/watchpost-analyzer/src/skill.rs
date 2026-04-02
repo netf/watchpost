@@ -73,7 +73,7 @@ mod tests {
 
         assert_eq!(spec.name, "runtime-trace-analyzer");
         assert_eq!(spec.version, "1.0");
-        assert_eq!(spec.tools.len(), 3);
+        assert_eq!(spec.tools.len(), 5);
 
         // Verify output_schema has the required fields
         let required = spec.output_schema["required"]
@@ -93,12 +93,14 @@ mod tests {
         let spec = SkillSpec::load(&path).expect("should load analyzer.yaml");
         let tools = spec.to_tool_definitions();
 
-        assert_eq!(tools.len(), 3);
+        assert_eq!(tools.len(), 5);
 
         let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"read_project_file"));
         assert!(names.contains(&"get_process_tree"));
         assert!(names.contains(&"get_recent_events"));
+        assert!(names.contains(&"lookup_package"));
+        assert!(names.contains(&"lookup_ip"));
 
         // Verify parameters were mapped to input_schema
         for tool in &tools {

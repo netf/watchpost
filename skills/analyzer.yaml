@@ -71,6 +71,33 @@ tools:
           description: "Look back this many seconds"
       required: [pid, seconds]
 
+  - name: lookup_package
+    description: "Look up package metadata from the registry (npm, PyPI, crates.io)"
+    parameters:
+      type: object
+      properties:
+        ecosystem:
+          type: string
+          enum: [npm, pip, cargo]
+          description: "Package ecosystem"
+        name:
+          type: string
+          description: "Package name"
+        version:
+          type: string
+          description: "Specific version (optional)"
+      required: [ecosystem, name]
+
+  - name: lookup_ip
+    description: "Check IP address reputation and known associations"
+    parameters:
+      type: object
+      properties:
+        ip:
+          type: string
+          description: "IP address to look up"
+      required: [ip]
+
 output_schema:
   type: object
   properties:

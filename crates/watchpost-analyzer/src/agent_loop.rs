@@ -69,7 +69,7 @@ impl AgentLoop {
                     debug!(tool = %name, call = tool_call_count + 1, "LLM requested tool use");
 
                     // Execute the tool.
-                    let result = self.tool_executor.execute(&name, &input);
+                    let result = self.tool_executor.execute(&name, &input).await;
 
                     // Append assistant message with ToolUse content block.
                     messages.push(Message {
