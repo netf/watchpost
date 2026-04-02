@@ -1,0 +1,11 @@
+context_type: System
+expected_network: []
+expected_children:
+  - sudo
+  - pkexec
+  - systemd
+  - polkit-agent-helper-1
+expected_file_writes: []
+forbidden_file_access: []
+forbidden_children: []
+forbidden_network: []

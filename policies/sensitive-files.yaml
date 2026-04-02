@@ -1,0 +1,43 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: watchpost-sensitive-files
+spec:
+  lsmhooks:
+    - hook: "security_file_permission"
+      args:
+        - index: 0
+          type: "file"
+        - index: 1
+          type: "int"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: Prefix
+              values:
+                - "/etc/shadow"
+                - "/etc/sudoers"
+          matchBinaries:
+            - operator: NotIn
+              values:
+                - "/usr/bin/sudo"
+                - "/usr/bin/passwd"
+                - "/usr/lib/systemd/systemd"
+                - "/usr/sbin/sshd"
+          matchActions:
+            - action: Post
+        - matchArgs:
+            - index: 0
+              operator: Postfix
+              values:
+                - "/.ssh/"
+                - "/.gnupg/"
+          matchBinaries:
+            - operator: NotIn
+              values:
+                - "/usr/bin/ssh"
+                - "/usr/bin/ssh-agent"
+                - "/usr/bin/gpg"
+                - "/usr/bin/gnome-keyring-daemon"
+          matchActions:
+            - action: Post

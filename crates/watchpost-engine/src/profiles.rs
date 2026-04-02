@@ -439,4 +439,92 @@ mod tests {
             BehaviorClassification::Expected
         );
     }
+
+    // ------------------------------------------------------------------
+    // Tests for shipped profile YAML files
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn load_shipped_profiles() {
+        let profiles_dir =
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../profiles"));
+        let store = BehaviorProfileStore::load_dir(profiles_dir)
+            .expect("should load shipped profiles from profiles/ directory");
+
+        // At least 4 profiles: npm, cargo, pip, system
+        assert!(
+            store.profiles.len() >= 4,
+            "expected at least 4 profiles, got {}",
+            store.profiles.len()
+        );
+
+        // npm profile checks
+        let npm = store
+            .profiles
+            .get("npm")
+            .expect("npm profile should be loaded");
+        assert!(
+            npm.expected_children.contains(&"node-gyp".to_string()),
+            "npm profile should have node-gyp in expected_children"
+        );
+        assert!(
+            npm.forbidden_file_access.contains(&".ssh/".to_string()),
+            "npm profile should have .ssh/ in forbidden_file_access"
+        );
+
+        // cargo profile checks
+        let cargo = store
+            .profiles
+            .get("cargo")
+            .expect("cargo profile should be loaded");
+        assert!(
+            cargo.expected_children.contains(&"rustc".to_string()),
+            "cargo profile should have rustc in expected_children"
+        );
+
+        // pip profile exists
+        assert!(
+            store.profiles.contains_key("pip"),
+            "pip profile should be loaded"
+        );
+
+        // system profile exists
+        assert!(
+            store.profiles.contains_key("system"),
+            "system profile should be loaded"
+        );
+    }
+
+    #[test]
+    fn tracing_policy_yaml_files_are_valid() {
+        let policies_dir =
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../policies"));
+        let entries = std::fs::read_dir(policies_dir)
+            .expect("should be able to read policies/ directory");
+
+        let mut count = 0;
+        for entry in entries {
+            let entry = entry.expect("directory entry should be readable");
+            let path = entry.path();
+
+            let ext = path.extension().and_then(|e| e.to_str());
+            if ext != Some("yaml") && ext != Some("yml") {
+                continue;
+            }
+
+            let contents = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("should read {}: {e}", path.display()));
+
+            // Parse as generic YAML value to verify it is valid YAML.
+            let _value: serde_yml::Value = serde_yml::from_str(&contents)
+                .unwrap_or_else(|e| panic!("{} should be valid YAML: {e}", path.display()));
+
+            count += 1;
+        }
+
+        assert!(
+            count >= 4,
+            "expected at least 4 TracingPolicy YAML files, found {count}"
+        );
+    }
 }

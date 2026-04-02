@@ -1,0 +1,39 @@
+context_type: PackageInstall
+ecosystem: npm
+expected_network:
+  - host: "registry.npmjs.org"
+    description: "npm registry"
+  - host: "github.com"
+    description: "GitHub release assets"
+  - host: "objects.githubusercontent.com"
+    description: "GitHub downloads"
+expected_children:
+  - node
+  - sh
+  - bash
+  - node-gyp
+  - make
+  - cc
+  - c++
+  - g++
+  - python3
+  - node-pre-gyp
+expected_file_writes:
+  - node_modules/
+  - package-lock.json
+forbidden_file_access:
+  - .ssh/
+  - .gnupg/
+  - .aws/
+  - .config/gcloud/
+forbidden_children:
+  - nc
+  - ncat
+  - socat
+forbidden_network:
+  - port: 4444
+    description: "common reverse shell port"
+  - port: 5555
+    description: "common reverse shell port"
+  - port: 1337
+    description: "common reverse shell port"

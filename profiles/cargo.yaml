@@ -1,0 +1,31 @@
+context_type: Build
+ecosystem: cargo
+expected_network:
+  - host: "crates.io"
+    description: "Rust crate registry"
+  - host: "static.crates.io"
+    description: "Crate downloads CDN"
+  - host: "github.com"
+    description: "Git dependencies"
+expected_children:
+  - rustc
+  - cc
+  - ld
+  - ar
+  - as
+  - cc1
+  - collect2
+  - lld
+expected_file_writes:
+  - target/
+forbidden_file_access:
+  - .ssh/
+  - .gnupg/
+  - .aws/
+forbidden_children:
+  - nc
+  - ncat
+  - socat
+forbidden_network:
+  - port: 4444
+    description: "common reverse shell port"

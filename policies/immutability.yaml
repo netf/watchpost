@@ -1,0 +1,32 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: watchpost-immutability
+spec:
+  lsmhooks:
+    - hook: "security_file_permission"
+      args:
+        - index: 0
+          type: "file"
+        - index: 1
+          type: "int"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: Prefix
+              values:
+                - "/usr/"
+                - "/boot/"
+                - "/lib/modules/"
+            - index: 1
+              operator: Equal
+              values:
+                - "2"   # MAY_WRITE
+          matchBinaries:
+            - operator: NotIn
+              values:
+                - "/usr/bin/rpm-ostree"
+                - "/usr/bin/ostree"
+                - "/usr/lib/systemd/systemd-sysext"
+          matchActions:
+            - action: Post

@@ -1,0 +1,27 @@
+context_type: PackageInstall
+ecosystem: pip
+expected_network:
+  - host: "pypi.org"
+    description: "PyPI registry"
+  - host: "files.pythonhosted.org"
+    description: "PyPI downloads"
+expected_children:
+  - gcc
+  - g++
+  - python3
+  - cmake
+  - pip
+expected_file_writes:
+  - site-packages/
+forbidden_file_access:
+  - .ssh/
+  - .gnupg/
+  - .aws/
+  - .config/gcloud/
+forbidden_children:
+  - nc
+  - ncat
+  - socat
+forbidden_network:
+  - port: 4444
+    description: "common reverse shell port"
