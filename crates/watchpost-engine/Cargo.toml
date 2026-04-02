@@ -14,8 +14,11 @@ thiserror.workspace = true
 uuid.workspace = true
 serde.workspace = true
 serde_yml.workspace = true
+serde_json.workspace = true
+toml.workspace = true
 
 [dev-dependencies]
 watchpost-rules.workspace = true
 watchpost-collector.workspace = true
 tokio = { workspace = true, features = ["full", "test-util"] }
+tempfile = "3"

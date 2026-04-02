@@ -1,4 +1,5 @@
 pub mod correlation;
+pub mod feedback;
 pub mod profiles;
 pub mod scoring;
 pub mod tree;
@@ -34,7 +35,11 @@ impl Engine {
         let triggers = ActiveTriggerRegistry::new();
         let correlator =
             ThreeSignalCorrelator::new(tree, triggers, config.immediate_window_ms);
-        let scorer = HeuristicScorer::new(profiles);
+        let scorer = if config.weight_overrides_path.is_empty() {
+            HeuristicScorer::new(profiles)
+        } else {
+            HeuristicScorer::with_feedback(profiles, &config.weight_overrides_path)
+        };
 
         Self {
             correlator,

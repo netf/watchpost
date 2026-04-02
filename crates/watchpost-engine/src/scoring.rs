@@ -9,6 +9,7 @@ use watchpost_types::{
     ScoreBreakdown, ScoreIndicator, SuspicionScore,
 };
 
+use crate::feedback::FeedbackCollector;
 use crate::profiles::BehaviorProfileStore;
 
 /// Heuristic scorer that evaluates a [`CorrelatedTrace`] and produces a
@@ -17,6 +18,7 @@ use crate::profiles::BehaviorProfileStore;
 pub struct HeuristicScorer {
     weights: HashMap<ScoreIndicator, f64>,
     profiles: BehaviorProfileStore,
+    feedback: Option<FeedbackCollector>,
 }
 
 impl HeuristicScorer {
@@ -24,7 +26,22 @@ impl HeuristicScorer {
     /// behavior profile store.
     pub fn new(profiles: BehaviorProfileStore) -> Self {
         let weights = default_weights();
-        Self { weights, profiles }
+        Self {
+            weights,
+            profiles,
+            feedback: None,
+        }
+    }
+
+    /// Create a scorer with feedback-based weight adjustment enabled.
+    pub fn with_feedback(profiles: BehaviorProfileStore, weight_overrides_path: &str) -> Self {
+        let weights = default_weights();
+        let feedback = FeedbackCollector::new(weight_overrides_path);
+        Self {
+            weights,
+            profiles,
+            feedback: Some(feedback),
+        }
     }
 
     /// Score a correlated trace.
@@ -33,6 +50,10 @@ impl HeuristicScorer {
     /// behavior profile to decide whether to keep, skip, or amplify each
     /// indicator, then sums the weighted indicators, applies the context
     /// modifier, and clamps to `[0.0, 1.0]`.
+    ///
+    /// When a [`FeedbackCollector`] is present the scorer also records each
+    /// indicator fire and multiplies the base weight by the user-feedback
+    /// weight factor.
     pub fn score(&self, trace: &CorrelatedTrace) -> ScoreBreakdown {
         let mut indicators: Vec<(ScoreIndicator, f64)> = Vec::new();
 
@@ -52,6 +73,19 @@ impl HeuristicScorer {
             }
         }
 
+        // Record fires and apply feedback weight factors.
+        if let Some(ref fb) = self.feedback {
+            let fired_indicators: Vec<ScoreIndicator> =
+                indicators.iter().map(|(i, _)| i.clone()).collect();
+            fb.record_fire(&fired_indicators);
+
+            // Multiply each indicator weight by its feedback factor.
+            for (indicator, weight) in &mut indicators {
+                let factor = fb.get_weight_factor(indicator);
+                *weight *= factor;
+            }
+        }
+
         let raw_score: f64 = indicators.iter().map(|(_, w)| w).sum();
         let context_modifier = context_modifier(&trace.context);
         let scaled = raw_score * context_modifier;
@@ -62,6 +96,14 @@ impl HeuristicScorer {
             context_modifier,
             raw_score,
             final_score,
+        }
+    }
+
+    /// Record that the user overrode (undid) the given indicators. Delegates
+    /// to the internal [`FeedbackCollector`] if present.
+    pub fn record_override(&self, indicators: &[ScoreIndicator]) {
+        if let Some(ref fb) = self.feedback {
+            fb.record_override(indicators);
         }
     }
 
@@ -657,6 +699,65 @@ mod tests {
         assert!(
             (raw - 0.3).abs() < f64::EPSILON,
             "0.5 + (-0.2) should be 0.3"
+        );
+    }
+
+    // ----- Test 15: Feedback integration reduces scores for overridden indicators -----
+
+    #[test]
+    fn feedback_reduces_overridden_indicator_scores() {
+        // Create a scorer with feedback pointing at a temp file.
+        let tmpfile = tempfile::NamedTempFile::new().expect("tempfile");
+        let path_str = tmpfile.path().to_str().unwrap();
+        let scorer = HeuristicScorer::with_feedback(BehaviorProfileStore::new(), path_str);
+
+        let ctx = npm_context();
+        let event = make_enriched(
+            EventKind::NetworkConnect {
+                dest_ip: "evil.com".into(),
+                dest_port: 443,
+                protocol: "tcp".into(),
+            },
+            ctx.clone(),
+        );
+        let trace = make_trace(ctx.clone(), vec![event]);
+
+        // Score once without overrides -- baseline.
+        let baseline = scorer.score(&trace);
+        let baseline_weight: f64 = baseline
+            .indicators
+            .iter()
+            .filter(|(i, _)| *i == ScoreIndicator::NonRegistryNetwork)
+            .map(|(_, w)| *w)
+            .sum();
+        assert!(baseline_weight > 0.0, "baseline weight should be > 0");
+
+        // Now simulate many fires + overrides for NonRegistryNetwork.
+        for _ in 0..10 {
+            scorer.record_override(&[ScoreIndicator::NonRegistryNetwork]);
+        }
+
+        // Score again -- the weight should be reduced.
+        let event2 = make_enriched(
+            EventKind::NetworkConnect {
+                dest_ip: "evil.com".into(),
+                dest_port: 443,
+                protocol: "tcp".into(),
+            },
+            ctx.clone(),
+        );
+        let trace2 = make_trace(ctx, vec![event2]);
+        let adjusted = scorer.score(&trace2);
+        let adjusted_weight: f64 = adjusted
+            .indicators
+            .iter()
+            .filter(|(i, _)| *i == ScoreIndicator::NonRegistryNetwork)
+            .map(|(_, w)| *w)
+            .sum();
+
+        assert!(
+            adjusted_weight < baseline_weight,
+            "adjusted weight ({adjusted_weight}) should be less than baseline ({baseline_weight})"
         );
     }
 }
