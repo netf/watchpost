@@ -12,3 +12,5 @@ chrono.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
+serde.workspace = true
+serde_yml.workspace = true

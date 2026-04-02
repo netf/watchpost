@@ -36,7 +36,7 @@ clamped_unit_f64!(
 );
 
 /// Named indicators that contribute to a suspicion score.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ScoreIndicator {
     NonRegistryNetwork,
