@@ -6,7 +6,8 @@ use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 
-use crate::client::{AnthropicClient, ApiResponse, ContentBlock, Message};
+use crate::backend::LlmBackend;
+use crate::client::{ApiResponse, ContentBlock, Message};
 use crate::skill::SkillSpec;
 
 // ---------------------------------------------------------------------------
@@ -83,14 +84,14 @@ impl Default for GateAllowlist {
 /// Pre-execution gate analyzer that reads script content and decides
 /// allow/block via a single-shot LLM call (no agent loop, no tools).
 pub struct GateAnalyzer {
-    client: AnthropicClient,
+    client: Box<dyn LlmBackend>,
     skill: SkillSpec,
     allowlist: GateAllowlist,
     timeout_ms: u64,
 }
 
 impl GateAnalyzer {
-    pub fn new(client: AnthropicClient, skill: SkillSpec, timeout_ms: u64) -> Self {
+    pub fn new(client: Box<dyn LlmBackend>, skill: SkillSpec, timeout_ms: u64) -> Self {
         Self {
             client,
             skill,

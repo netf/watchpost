@@ -3,9 +3,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
-use watchpost_types::{CorrelatedTrace, LogLevel, Verdict, WatchpostConfig};
+use watchpost_types::{AnalyzerBackend, CorrelatedTrace, LogLevel, Verdict, WatchpostConfig};
 
+use watchpost_analyzer::backend::LlmBackend;
 use watchpost_analyzer::client::AnthropicClient;
+use watchpost_analyzer::ollama::OllamaClient;
 use watchpost_analyzer::skill::SkillSpec;
 use watchpost_analyzer::Analyzer;
 use watchpost_collector::Collector;
@@ -116,17 +118,37 @@ pub async fn run_daemon(config: WatchpostConfig) -> Result<()> {
 
     let rule_engine = RuleEngine::new(rules);
 
-    let api_key = if config.daemon.api_key.is_empty() {
-        std::env::var("ANTHROPIC_API_KEY").unwrap_or_default()
-    } else {
-        config.daemon.api_key.clone()
+    let llm_backend: Box<dyn LlmBackend> = match config.advanced.analyzer.backend {
+        AnalyzerBackend::Anthropic => {
+            let api_key = if config.daemon.api_key.is_empty() {
+                std::env::var("ANTHROPIC_API_KEY").unwrap_or_default()
+            } else {
+                config.daemon.api_key.clone()
+            };
+            Box::new(AnthropicClient::new(
+                api_key,
+                config.advanced.analyzer.model.clone(),
+            ))
+        }
+        AnalyzerBackend::Ollama => {
+            let endpoint = config
+                .advanced
+                .analyzer
+                .ollama_endpoint
+                .clone()
+                .unwrap_or_else(|| "http://127.0.0.1:11434".to_string());
+            let model = config
+                .advanced
+                .analyzer
+                .ollama_model
+                .clone()
+                .unwrap_or_else(|| "llama3.1:8b".to_string());
+            Box::new(OllamaClient::new(endpoint, model))
+        }
     };
 
-    let anthropic_client =
-        AnthropicClient::new(api_key, config.advanced.analyzer.model.clone());
-
     let analyzer = Analyzer::new(
-        anthropic_client,
+        llm_backend,
         skill,
         config.advanced.analyzer.max_tool_calls,
         config.advanced.analyzer.max_analyses_per_minute,

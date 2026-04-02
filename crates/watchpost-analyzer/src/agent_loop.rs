@@ -9,7 +9,8 @@ use watchpost_types::{
     ScoreBreakdown, Verdict,
 };
 
-use crate::client::{AnthropicClient, ApiResponse, ContentBlock, Message};
+use crate::backend::LlmBackend;
+use crate::client::{ApiResponse, ContentBlock, Message};
 use crate::context_builder::ContextBuilder;
 use crate::skill::SkillSpec;
 use crate::tools::ToolExecutor;
@@ -21,14 +22,14 @@ use crate::tools::ToolExecutor;
 /// A bounded agent loop that drives the LLM through tool calls until it
 /// produces a final verdict.
 pub struct AgentLoop {
-    client: AnthropicClient,
+    client: Box<dyn LlmBackend>,
     tool_executor: ToolExecutor,
     skill: SkillSpec,
     max_tool_calls: u32,
 }
 
 impl AgentLoop {
-    pub fn new(client: AnthropicClient, skill: SkillSpec, max_tool_calls: u32) -> Self {
+    pub fn new(client: Box<dyn LlmBackend>, skill: SkillSpec, max_tool_calls: u32) -> Self {
         Self {
             client,
             tool_executor: ToolExecutor::new(),

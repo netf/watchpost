@@ -1,6 +1,9 @@
 use anyhow::{Context, Result, bail};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
+
+use crate::backend::LlmBackend;
 
 // ---------------------------------------------------------------------------
 // Wire types
@@ -236,6 +239,24 @@ impl AnthropicClient {
                 );
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LlmBackend implementation
+// ---------------------------------------------------------------------------
+
+#[async_trait]
+impl LlmBackend for AnthropicClient {
+    async fn send_message(
+        &self,
+        system_prompt: &str,
+        messages: &[Message],
+        tools: &[ToolDefinition],
+        output_schema: Option<&serde_json::Value>,
+    ) -> Result<ApiResponse> {
+        self.send_message(system_prompt, messages, tools, output_schema)
+            .await
     }
 }
 

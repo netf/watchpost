@@ -390,6 +390,102 @@ impl ContextBuilder {
 }
 
 // ---------------------------------------------------------------------------
+// Context truncation for small models
+// ---------------------------------------------------------------------------
+
+/// Maximum number of recent events to keep when truncating for small context
+/// models.
+const MAX_RECENT_EVENTS: usize = 20;
+
+/// Truncate a message for small-context models (e.g. Ollama with 8k context).
+///
+/// When the message text exceeds `max_chars` characters (rough 4:1
+/// char-to-token ratio, so 4000 chars ~= 1000 tokens), the event timeline is
+/// truncated to the most recent [`MAX_RECENT_EVENTS`] events while keeping the
+/// trigger context, ancestry, and task sections intact.
+///
+/// If the message is short enough, it is returned unchanged.
+pub fn truncate_for_small_context(message: &Message, max_chars: usize) -> Message {
+    // Extract the text from the first Text block.
+    let original_text = match message.content.first() {
+        Some(ContentBlock::Text { text }) => text,
+        _ => return message.clone(),
+    };
+
+    // If within budget, return as-is.
+    if original_text.len() <= max_chars {
+        return message.clone();
+    }
+
+    // Split into sections by "## " headings and rebuild with a truncated
+    // event timeline.
+    let mut sections: Vec<(&str, &str)> = Vec::new();
+    let mut rest = original_text.as_str();
+
+    while let Some(pos) = rest.find("## ") {
+        // Find the end of this section (start of next heading, or end of string).
+        let section_start = pos;
+        let after_heading = &rest[pos + 3..];
+        let section_end = after_heading
+            .find("## ")
+            .map(|p| pos + 3 + p)
+            .unwrap_or(rest.len());
+
+        // Extract heading name (first line after "## ").
+        let heading_line_end = after_heading
+            .find('\n')
+            .unwrap_or(after_heading.len());
+        let heading_name = &after_heading[..heading_line_end];
+        let section_body = &rest[section_start..section_end];
+
+        sections.push((heading_name, section_body));
+        rest = &rest[section_end..];
+    }
+
+    // Rebuild the text, truncating the Event Timeline section.
+    let mut truncated = String::with_capacity(max_chars);
+
+    for (heading, body) in &sections {
+        if heading.starts_with("Event Timeline") {
+            // Truncate: keep the heading and only the last MAX_RECENT_EVENTS
+            // event lines.
+            truncated.push_str("## Event Timeline\n");
+
+            let lines: Vec<&str> = body.lines().collect();
+            // Event lines are indented with "  [" or start with "("
+            let event_lines: Vec<&str> = lines
+                .iter()
+                .filter(|l| l.starts_with("  [") || l.starts_with("  "))
+                .copied()
+                .collect();
+
+            let total = event_lines.len();
+            if total > MAX_RECENT_EVENTS {
+                writeln!(
+                    truncated,
+                    "(truncated: showing {MAX_RECENT_EVENTS} of {total} events)"
+                )
+                .ok();
+                for line in &event_lines[total - MAX_RECENT_EVENTS..] {
+                    writeln!(truncated, "{line}").ok();
+                }
+            } else {
+                // No truncation needed for the timeline.
+                truncated.push_str(body);
+            }
+            writeln!(truncated).ok();
+        } else {
+            truncated.push_str(body);
+        }
+    }
+
+    Message {
+        role: message.role.clone(),
+        content: vec![ContentBlock::Text { text: truncated }],
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -611,5 +707,106 @@ mod tests {
         assert!(text.contains("## Score Breakdown"));
         assert!(text.contains("NonRegistryNetwork"));
         assert!(text.contains("SensitiveFileRead"));
+    }
+
+    // -- Truncation tests -----------------------------------------------------
+
+    #[test]
+    fn truncate_short_message_unchanged() {
+        let msg = Message {
+            role: "user".to_string(),
+            content: vec![ContentBlock::Text {
+                text: "Short message".to_string(),
+            }],
+        };
+
+        let result = truncate_for_small_context(&msg, 1000);
+        match &result.content[0] {
+            ContentBlock::Text { text } => assert_eq!(text, "Short message"),
+            other => panic!("expected Text, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn truncate_long_message_trims_timeline() {
+        // Build a message with many events to exceed the threshold.
+        let mut text = String::new();
+        writeln!(text, "## Trigger Context").ok();
+        writeln!(text, "The user ran `npm install` in `/home/dev`.").ok();
+        writeln!(text).ok();
+        writeln!(text, "## Event Timeline").ok();
+        // Add 30 event lines — more than MAX_RECENT_EVENTS (20).
+        for i in 0..30 {
+            writeln!(
+                text,
+                "  [2025-01-01T00:00:{:02}Z] pid=500{} EXEC binary=/usr/bin/node args=[node] cwd=/tmp uid=1000",
+                i, i
+            )
+            .ok();
+        }
+        writeln!(text).ok();
+        writeln!(text, "## Task").ok();
+        writeln!(text, "Analyze the above trace.").ok();
+
+        let msg = Message {
+            role: "user".to_string(),
+            content: vec![ContentBlock::Text { text }],
+        };
+
+        // Use a very small max_chars to force truncation.
+        let result = truncate_for_small_context(&msg, 100);
+        let result_text = match &result.content[0] {
+            ContentBlock::Text { text } => text,
+            other => panic!("expected Text, got {:?}", other),
+        };
+
+        // Should still contain the trigger and task sections.
+        assert!(
+            result_text.contains("## Trigger Context"),
+            "truncated message should keep trigger context"
+        );
+        assert!(
+            result_text.contains("## Task"),
+            "truncated message should keep task section"
+        );
+        // Should contain the truncation notice.
+        assert!(
+            result_text.contains("truncated"),
+            "truncated message should mention truncation"
+        );
+        // Should contain event 29 (last) but not event 0 (first).
+        assert!(
+            result_text.contains("pid=50029"),
+            "truncated message should contain the most recent event"
+        );
+        assert!(
+            !result_text.contains("pid=5000 "),
+            "truncated message should not contain the oldest event"
+        );
+    }
+
+    #[test]
+    fn truncate_non_text_message_unchanged() {
+        let msg = Message {
+            role: "user".to_string(),
+            content: vec![ContentBlock::ToolResult {
+                tool_use_id: "t1".to_string(),
+                content: "some result".to_string(),
+            }],
+        };
+
+        let result = truncate_for_small_context(&msg, 10);
+        // Should return the message unchanged since first block isn't Text.
+        assert_eq!(result.content.len(), 1);
+        match &result.content[0] {
+            ContentBlock::ToolResult {
+                tool_use_id,
+                content,
+            } => {
+                assert_eq!(tool_use_id, "t1");
+                assert_eq!(content, "some result");
+            }
+            other => panic!("expected ToolResult, got {:?}", other),
+        }
     }
 }

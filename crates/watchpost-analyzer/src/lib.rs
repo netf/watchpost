@@ -1,7 +1,9 @@
 pub mod agent_loop;
+pub mod backend;
 pub mod client;
 pub mod context_builder;
 pub mod gate;
+pub mod ollama;
 pub mod rate_limiter;
 pub mod skill;
 pub mod tools;
@@ -12,7 +14,7 @@ use tracing::{info, warn};
 use watchpost_types::{CorrelatedTrace, Verdict};
 
 use crate::agent_loop::AgentLoop;
-use crate::client::AnthropicClient;
+use crate::backend::LlmBackend;
 use crate::rate_limiter::RateLimiter;
 use crate::skill::SkillSpec;
 
@@ -31,7 +33,7 @@ pub struct Analyzer {
 
 impl Analyzer {
     pub fn new(
-        client: AnthropicClient,
+        client: Box<dyn LlmBackend>,
         skill: SkillSpec,
         max_tool_calls: u32,
         max_per_minute: u32,
