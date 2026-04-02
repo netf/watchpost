@@ -21,13 +21,11 @@ use crate::grpc::TetragonClient;
 use crate::manifest::PackageManifestCache;
 
 /// The main collector that wires together the gRPC client, process ancestry
-/// builder, action context inferrer, and package manifest cache into a single
+/// builder, context inferrer, and package manifest cache into a single
 /// event-processing pipeline.
 pub struct Collector {
     client: TetragonClient,
     ancestry: ProcessAncestryBuilder,
-    #[allow(dead_code)] // kept for documentation: the collector uses context inference
-    context_inferrer: ActionContextInferrer,
     manifest_cache: PackageManifestCache,
     max_ancestry_depth: usize,
 }
@@ -44,7 +42,6 @@ impl Collector {
             .context("failed to connect to Tetragon")?;
 
         let ancestry = ProcessAncestryBuilder::new();
-        let context_inferrer = ActionContextInferrer;
         let manifest_cache = PackageManifestCache::new(collector_config.manifest_cache_size);
         let max_ancestry_depth = collector_config.max_ancestry_depth;
 
@@ -58,7 +55,6 @@ impl Collector {
         Ok(Self {
             client,
             ancestry,
-            context_inferrer,
             manifest_cache,
             max_ancestry_depth,
         })
