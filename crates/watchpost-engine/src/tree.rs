@@ -91,7 +91,7 @@ impl ProcessTree {
 
     /// Return a clone of the node for the given PID, if it exists.
     pub fn get(&self, pid: u32) -> Option<ProcessNode> {
-        self.nodes.get(&pid).map(|entry| entry.clone())
+        self.nodes.get(&pid).map(|entry| entry.value().clone())
     }
 }
 

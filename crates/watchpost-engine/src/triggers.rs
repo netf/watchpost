@@ -69,19 +69,19 @@ impl ActiveTriggerRegistry {
         self.triggers
             .iter()
             .filter(|entry| entry.session_active)
-            .map(|entry| entry.clone())
+            .map(|entry| entry.value().clone())
             .collect()
     }
 
     /// Look up a trigger by root PID and return a clone if found.
     pub fn get_trigger_for_pid(&self, pid: u32) -> Option<ActiveTrigger> {
         let trigger_id = self.pid_to_trigger.get(&pid)?;
-        self.triggers.get(&*trigger_id).map(|t| t.clone())
+        self.triggers.get(&*trigger_id).map(|t| t.value().clone())
     }
 
     /// Remove triggers that were started more than `max_age` ago.
     pub fn cleanup_expired(&self, max_age: std::time::Duration) {
-        let cutoff = Utc::now() - chrono::Duration::from_std(max_age).unwrap_or(chrono::Duration::MAX);
+        let cutoff = Utc::now() - chrono::TimeDelta::from_std(max_age).unwrap_or(chrono::TimeDelta::MAX);
         let expired: Vec<(Uuid, u32)> = self
             .triggers
             .iter()
