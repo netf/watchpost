@@ -1712,6 +1712,13 @@ dependencies = [
 name = "watchpost-engine"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "chrono",
+ "dashmap",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "uuid",
  "watchpost-types",
 ]
 
