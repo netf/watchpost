@@ -1,0 +1,12 @@
+[daemon]
+api_key = "sk-ant-..."
+# log_level = "warn"
+# data_dir = "/var/lib/watchpost"
+
+# [enforcement]
+# mode = "autonomous"
+
+# [notify]
+# desktop = true
+
+# See PROJECT.md Section 7 for all advanced settings

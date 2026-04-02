@@ -59,3 +59,5 @@ clap.workspace = true
 toml.workspace = true
 anyhow.workspace = true
 serde.workspace = true
+sd-notify = "0.4"
+libc = "0.2"
