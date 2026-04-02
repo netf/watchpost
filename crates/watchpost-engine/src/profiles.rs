@@ -3,7 +3,8 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use watchpost_types::{
-    ActionContext, BehaviorClassification, BehaviorProfile, Ecosystem, EventKind, FileAccessType,
+    util::binary_basename, ActionContext, BehaviorClassification, BehaviorProfile, Ecosystem,
+    EventKind, FileAccessType,
 };
 
 /// Store of behavior profiles keyed by ecosystem or context type name.
@@ -173,10 +174,7 @@ fn context_to_key(context: &ActionContext) -> &str {
     }
 }
 
-/// Extract the basename from a binary path (e.g. "/usr/bin/node" -> "node").
-fn binary_basename(path: &str) -> &str {
-    path.rsplit('/').next().unwrap_or(path)
-}
+// binary_basename is imported from watchpost_types::util
 
 /// Check whether a destination matches any entry in a list of network
 /// expectations. An expectation matches if its host is a substring of the

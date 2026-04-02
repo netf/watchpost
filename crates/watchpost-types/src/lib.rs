@@ -6,6 +6,7 @@ pub mod policy;
 pub mod profile;
 pub mod rules;
 pub mod scoring;
+pub mod util;
 pub mod verdict;
 
 pub use config::*;
@@ -16,4 +17,5 @@ pub use policy::*;
 pub use profile::*;
 pub use rules::*;
 pub use scoring::*;
+pub use util::*;
 pub use verdict::*;

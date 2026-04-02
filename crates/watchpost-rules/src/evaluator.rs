@@ -1,6 +1,7 @@
 use chrono::Utc;
 use uuid::Uuid;
 use watchpost_types::{
+    util::{binary_basename, shannon_entropy},
     ActionContext, Classification, ConditionTree, Confidence, CorrelatedTrace, EventKind,
     Predicate, RecommendedAction, Rule, RuleAction, Severity, Verdict,
 };
@@ -58,7 +59,7 @@ fn evaluate_predicate(predicate: &Predicate, trace: &CorrelatedTrace) -> bool {
                 _ => None,
             };
             if let Some(path) = binary {
-                let basename = basename(path);
+                let basename = binary_basename(path);
                 bins.iter().any(|b| b == basename)
             } else {
                 false
@@ -67,7 +68,7 @@ fn evaluate_predicate(predicate: &Predicate, trace: &CorrelatedTrace) -> bool {
 
         Predicate::AncestorBinaryMatches(bins) => trace.events.iter().any(|e| {
             e.ancestry.iter().any(|ancestor| {
-                let basename = basename(&ancestor.binary_path);
+                let basename = binary_basename(&ancestor.binary_path);
                 bins.iter().any(|b| b == basename)
             })
         }),
@@ -141,29 +142,7 @@ fn evaluate_predicate(predicate: &Predicate, trace: &CorrelatedTrace) -> bool {
     }
 }
 
-/// Extract the basename (last path component) from a file path.
-fn basename(path: &str) -> &str {
-    path.rsplit('/').next().unwrap_or(path)
-}
-
-/// Compute Shannon entropy of a string.
-fn shannon_entropy(s: &str) -> f64 {
-    let len = s.len() as f64;
-    if len == 0.0 {
-        return 0.0;
-    }
-    let mut freq = [0u32; 256];
-    for b in s.bytes() {
-        freq[b as usize] += 1;
-    }
-    freq.iter()
-        .filter(|&&c| c > 0)
-        .map(|&c| {
-            let p = c as f64 / len;
-            -p * p.log2()
-        })
-        .sum()
-}
+// basename and shannon_entropy are imported from watchpost_types::util
 
 /// Convert a matched rule + trace into a verdict.
 fn rule_to_verdict(rule: &Rule, trace: &CorrelatedTrace) -> Verdict {

@@ -40,23 +40,6 @@ pub struct ToolDefinition {
     pub input_schema: serde_json::Value,
 }
 
-/// The structured output format configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OutputConfig {
-    pub format: OutputFormat,
-}
-
-/// Output format variant.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum OutputFormat {
-    #[serde(rename = "json_schema")]
-    JsonSchema {
-        name: String,
-        schema: serde_json::Value,
-    },
-}
-
 /// Response from the Messages API.
 #[derive(Debug, Clone)]
 pub enum ApiResponse {

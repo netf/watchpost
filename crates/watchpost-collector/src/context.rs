@@ -1,18 +1,15 @@
 use watchpost_types::context::{ActionContext, Ecosystem};
 use watchpost_types::events::AncestryEntry;
+use watchpost_types::util::{binary_basename, SHELLS};
 
-/// Extracts the filename (last path component) from an ancestry entry's binary path.
+/// Extracts the filename from an ancestry entry's binary path.
 fn binary_name(entry: &AncestryEntry) -> &str {
-    entry
-        .binary_path
-        .rsplit('/')
-        .next()
-        .unwrap_or(&entry.binary_path)
+    binary_basename(&entry.binary_path)
 }
 
 /// Checks whether a binary name corresponds to a common shell.
 fn is_shell(name: &str) -> bool {
-    matches!(name, "bash" | "zsh" | "fish" | "sh")
+    SHELLS.contains(&name)
 }
 
 /// Infers the [`ActionContext`] from a process ancestry chain.

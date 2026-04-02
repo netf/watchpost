@@ -230,7 +230,9 @@ async fn run_rules_loop(
 ) -> Result<()> {
     while let Some(trace) = rx.recv().await {
         if let Some(verdict) = engine.evaluate(&trace) {
-            let _ = tx.try_send(verdict);
+            if let Err(e) = tx.try_send(verdict) {
+                tracing::warn!("rules verdict channel full or closed: {e}");
+            }
         }
     }
     Ok(())
@@ -246,11 +248,11 @@ async fn merge_verdicts(
     loop {
         tokio::select! {
             verdict = rules_rx.recv() => match verdict {
-                Some(v) => { let _ = merged_tx.send(v).await; }
+                Some(v) => { if merged_tx.send(v).await.is_err() { break; } }
                 None => break,
             },
             verdict = analyzer_rx.recv() => match verdict {
-                Some(v) => { let _ = merged_tx.send(v).await; }
+                Some(v) => { if merged_tx.send(v).await.is_err() { break; } }
                 None => break,
             },
         }

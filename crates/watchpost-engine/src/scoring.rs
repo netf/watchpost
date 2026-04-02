@@ -1,41 +1,15 @@
 use std::collections::HashMap;
 
 use watchpost_types::{
+    util::{
+        binary_basename, shannon_entropy, ALL_KNOWN_REGISTRIES, C2_PORTS, SENSITIVE_PATHS, SHELLS,
+        TEMP_DIRS,
+    },
     ActionContext, BehaviorClassification, CorrelatedTrace, EventKind, FileAccessType,
     ScoreBreakdown, ScoreIndicator, SuspicionScore,
 };
 
 use crate::profiles::BehaviorProfileStore;
-
-/// Sensitive path fragments whose presence in a file path triggers
-/// `SensitiveFileRead` or `SensitiveFileWrite`.
-const SENSITIVE_PATHS: &[&str] = &[
-    ".ssh/",
-    ".gnupg/",
-    ".aws/",
-    ".config/gcloud/",
-    ".config/gh/",
-];
-
-/// Directories commonly used for staging payloads.
-const TEMP_DIRS: &[&str] = &["/tmp/", "/dev/shm/", "/var/tmp/"];
-
-/// Ports associated with common C2 frameworks.
-const C2_PORTS: &[u16] = &[4444, 5555, 1337, 9001];
-
-/// Shell binary basenames.
-const SHELLS: &[&str] = &["sh", "bash", "dash", "zsh", "fish"];
-
-/// Known package registry hostnames (union across ecosystems).
-const KNOWN_REGISTRIES: &[&str] = &[
-    "registry.npmjs.org",
-    "github.com",
-    "objects.githubusercontent.com",
-    "pypi.org",
-    "files.pythonhosted.org",
-    "crates.io",
-    "static.crates.io",
-];
 
 /// Heuristic scorer that evaluates a [`CorrelatedTrace`] and produces a
 /// [`ScoreBreakdown`] with individually weighted indicators, a context
@@ -63,27 +37,18 @@ impl HeuristicScorer {
         let mut indicators: Vec<(ScoreIndicator, f64)> = Vec::new();
 
         for event in &trace.events {
+            // Classify once per event, not once per indicator.
+            let classification = self
+                .profiles
+                .classify_event(&event.event.kind, &trace.context);
+
+            if classification == BehaviorClassification::Expected {
+                continue;
+            }
+
             let detected = self.detect_indicators(&event.event.kind, &trace.context);
-
             for (indicator, weight) in detected {
-                // Profile-based filtering: if the event is Expected, skip.
-                let classification = self
-                    .profiles
-                    .classify_event(&event.event.kind, &trace.context);
-
-                let effective_weight = match classification {
-                    BehaviorClassification::Expected => 0.0,
-                    BehaviorClassification::Forbidden => {
-                        // Use the higher of the indicator weight and the max
-                        // weight for the indicator (i.e. keep it at full).
-                        weight
-                    }
-                    BehaviorClassification::Unspecified => weight,
-                };
-
-                if effective_weight > 0.0 {
-                    indicators.push((indicator, effective_weight));
-                }
+                indicators.push((indicator, weight));
             }
         }
 
@@ -113,7 +78,7 @@ impl HeuristicScorer {
                 dest_ip, dest_port, ..
             } => {
                 // NonRegistryNetwork: destination is not a known registry.
-                if !KNOWN_REGISTRIES.iter().any(|r| dest_ip.contains(r)) {
+                if !ALL_KNOWN_REGISTRIES.iter().any(|r| dest_ip.contains(r)) {
                     if let Some(&w) = self.weights.get(&ScoreIndicator::NonRegistryNetwork) {
                         found.push((ScoreIndicator::NonRegistryNetwork, w));
                     }
@@ -157,7 +122,7 @@ impl HeuristicScorer {
 
                 // ShellFromPackageManager: a shell binary launched in a
                 // package-install context.
-                let basename = binary.rsplit('/').next().unwrap_or(binary);
+                let basename = binary_basename(binary);
                 if SHELLS.contains(&basename) && is_package_install(context) {
                     if let Some(&w) = self.weights.get(&ScoreIndicator::ShellFromPackageManager) {
                         found.push((ScoreIndicator::ShellFromPackageManager, w));
@@ -205,24 +170,6 @@ fn is_package_install(context: &ActionContext) -> bool {
     matches!(context, ActionContext::PackageInstall { .. })
 }
 
-/// Shannon entropy of a byte string.
-fn shannon_entropy(s: &str) -> f64 {
-    let len = s.len() as f64;
-    if len == 0.0 {
-        return 0.0;
-    }
-    let mut freq = [0u32; 256];
-    for b in s.bytes() {
-        freq[b as usize] += 1;
-    }
-    freq.iter()
-        .filter(|&&c| c > 0)
-        .map(|&c| {
-            let p = c as f64 / len;
-            -p * p.log2()
-        })
-        .sum()
-}
 
 /// Build the default indicator weight table.
 fn default_weights() -> HashMap<ScoreIndicator, f64> {
@@ -591,7 +538,7 @@ mod tests {
         let breakdown = scorer.score(&trace);
 
         // The profile says registry.npmjs.org is expected, and it's also in
-        // KNOWN_REGISTRIES, so NonRegistryNetwork should not fire.
+        // ALL_KNOWN_REGISTRIES, so NonRegistryNetwork should not fire.
         assert!(
             !breakdown
                 .indicators

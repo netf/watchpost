@@ -1,6 +1,7 @@
 use dashmap::DashMap;
 use uuid::Uuid;
 use watchpost_types::{
+    util::{CARGO_REGISTRIES, NPM_REGISTRIES, PIP_REGISTRIES},
     ActionContext, ArgumentMatch, CorrelatedTrace, CorrelationSignal, Ecosystem, EnrichedEvent,
     EventKind,
 };
@@ -8,15 +9,6 @@ use watchpost_types::{
 use crate::tree::ProcessTree;
 use crate::triggers::{ActiveTrigger, ActiveTriggerRegistry};
 use crate::windows::{ImmediateWindow, SessionWindow};
-
-// Known package registry hostnames per ecosystem.
-const NPM_REGISTRIES: &[&str] = &[
-    "registry.npmjs.org",
-    "github.com",
-    "objects.githubusercontent.com",
-];
-const PIP_REGISTRIES: &[&str] = &["pypi.org", "files.pythonhosted.org"];
-const CARGO_REGISTRIES: &[&str] = &["crates.io", "static.crates.io", "github.com"];
 
 /// Three-signal correlator that matches incoming events against active triggers
 /// using lineage (process tree), temporal (time windows), and argument (content

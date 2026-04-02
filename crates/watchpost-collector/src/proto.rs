@@ -302,6 +302,21 @@ fn extract_cred_change(args: &[crate::tetragon::KprobeArgument]) -> (u32, u32) {
     (0, 0)
 }
 
+/// Parse mount + path + permission into (full_path, access_type).
+fn parse_file_fields(mount: &str, path: &str, permission: &str) -> (String, FileAccessType) {
+    let access_type = if permission.contains('w') {
+        FileAccessType::Write
+    } else {
+        FileAccessType::Read
+    };
+    let full_path = if mount.is_empty() {
+        path.to_owned()
+    } else {
+        format!("{mount}{path}")
+    };
+    (full_path, access_type)
+}
+
 /// Extract file path and access type from LSM hook arguments.
 fn extract_file_info(
     args: &[crate::tetragon::KprobeArgument],
@@ -310,30 +325,10 @@ fn extract_file_info(
         if let Some(ref inner) = arg.arg {
             match inner {
                 kprobe_argument::Arg::FileArg(f) => {
-                    let access_type = if f.permission.contains('w') {
-                        FileAccessType::Write
-                    } else {
-                        FileAccessType::Read
-                    };
-                    let path = if f.mount.is_empty() {
-                        f.path.clone()
-                    } else {
-                        format!("{}{}", f.mount, f.path)
-                    };
-                    return (path, access_type);
+                    return parse_file_fields(&f.mount, &f.path, &f.permission);
                 }
                 kprobe_argument::Arg::PathArg(p) => {
-                    let access_type = if p.permission.contains('w') {
-                        FileAccessType::Write
-                    } else {
-                        FileAccessType::Read
-                    };
-                    let path = if p.mount.is_empty() {
-                        p.path.clone()
-                    } else {
-                        format!("{}{}", p.mount, p.path)
-                    };
-                    return (path, access_type);
+                    return parse_file_fields(&p.mount, &p.path, &p.permission);
                 }
                 _ => {}
             }
