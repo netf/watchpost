@@ -330,6 +330,7 @@ mod tests {
                 cmdline: "bash".to_owned(),
             }],
             context,
+            provenance: None,
         }
     }
 

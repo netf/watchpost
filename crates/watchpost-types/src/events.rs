@@ -86,6 +86,10 @@ pub struct EnrichedEvent {
     pub event: TetragonEvent,
     pub ancestry: Vec<AncestryEntry>,
     pub context: ActionContext,
+    /// Optional package provenance data, populated for PackageInstall events
+    /// when a registry lookup succeeds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<crate::provenance::ProvenanceInfo>,
 }
 
 #[cfg(test)]
@@ -127,6 +131,7 @@ mod tests {
                 package_version: Some("1.0.0".to_owned()),
                 working_dir: "/home/user/project".to_owned(),
             },
+            provenance: None,
         }
     }
 

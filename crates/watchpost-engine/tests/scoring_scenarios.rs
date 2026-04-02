@@ -44,6 +44,7 @@ fn make_enriched(
         },
         ancestry,
         context,
+        provenance: None,
     }
 }
 

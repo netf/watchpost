@@ -213,6 +213,7 @@ mod tests {
                 package_version: Some("1.0.0".to_owned()),
                 working_dir: "/home/user/project".to_owned(),
             },
+            provenance: None,
         }
     }
 
@@ -234,6 +235,7 @@ mod tests {
             },
             ancestry,
             context,
+            provenance: None,
         }
     }
 
@@ -257,6 +259,7 @@ mod tests {
             },
             ancestry,
             context,
+            provenance: None,
         }
     }
 
@@ -457,6 +460,7 @@ mod tests {
                 cmdline: "cargo build".to_owned(),
             }],
             context: cargo_context(),
+            provenance: None,
         };
 
         let trace = make_trace(vec![event], cargo_context());
@@ -535,6 +539,7 @@ mod tests {
             },
             ancestry: vec![],
             context: ActionContext::Unknown,
+            provenance: None,
         };
 
         let trace = make_trace(vec![high_entropy_event], ActionContext::Unknown);
@@ -556,6 +561,7 @@ mod tests {
             },
             ancestry: vec![],
             context: ActionContext::Unknown,
+            provenance: None,
         };
 
         let trace2 = make_trace(vec![normal_event], ActionContext::Unknown);
@@ -680,6 +686,7 @@ mod tests {
                 cmdline: "bash".to_owned(),
             }],
             context: ActionContext::Unknown,
+            provenance: None,
         };
 
         let trace = make_trace(vec![mining_event], ActionContext::Unknown);

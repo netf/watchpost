@@ -439,6 +439,7 @@ mod tests {
                 package_version: Some("4.17.21".to_string()),
                 working_dir: "/home/dev/myproject".to_string(),
             },
+            provenance: None,
         };
 
         let event1 = EnrichedEvent {
@@ -461,6 +462,7 @@ mod tests {
                 package_version: Some("4.17.21".to_string()),
                 working_dir: "/home/dev/myproject".to_string(),
             },
+            provenance: None,
         };
 
         let event2 = EnrichedEvent {
@@ -482,6 +484,7 @@ mod tests {
                 package_version: Some("4.17.21".to_string()),
                 working_dir: "/home/dev/myproject".to_string(),
             },
+            provenance: None,
         };
 
         CorrelatedTrace {

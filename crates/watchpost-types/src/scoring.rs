@@ -51,6 +51,19 @@ pub enum ScoreIndicator {
     ReverseShellPattern,
     ObfuscatedContent,
     AntiForensics,
+    // Phase 2: package provenance indicators
+    /// Package age < 7 days with < 100 downloads (+0.3)
+    NewPackageLowDownloads,
+    /// Package has known vulnerability per audit (+0.4)
+    KnownVulnerability,
+    /// Package name is Levenshtein distance <= 2 from a top package (+0.5)
+    Typosquatting,
+    /// Package has Sigstore/npm provenance attestation (-0.2, trust bonus)
+    ProvenanceAttested,
+    /// Package has > 10M weekly downloads and > 5 years history (-0.3, trust bonus)
+    EstablishedPackage,
+    /// Package version has no corresponding GitHub tag/release (+0.4)
+    NoGithubRelease,
 }
 
 /// A detailed breakdown of how a suspicion score was computed.

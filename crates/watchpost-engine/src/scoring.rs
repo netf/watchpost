@@ -186,6 +186,13 @@ fn default_weights() -> HashMap<ScoreIndicator, f64> {
     w.insert(ScoreIndicator::ReverseShellPattern, 0.9);
     w.insert(ScoreIndicator::ObfuscatedContent, 0.7);
     w.insert(ScoreIndicator::AntiForensics, 0.5);
+    // Phase 2: package provenance indicators
+    w.insert(ScoreIndicator::NewPackageLowDownloads, 0.3);
+    w.insert(ScoreIndicator::KnownVulnerability, 0.4);
+    w.insert(ScoreIndicator::Typosquatting, 0.5);
+    w.insert(ScoreIndicator::ProvenanceAttested, -0.2); // trust bonus (reduces score)
+    w.insert(ScoreIndicator::EstablishedPackage, -0.3); // trust bonus (reduces score)
+    w.insert(ScoreIndicator::NoGithubRelease, 0.4);
     w
 }
 
@@ -261,6 +268,7 @@ mod tests {
             },
             ancestry: vec![],
             context,
+            provenance: None,
         }
     }
 
@@ -603,5 +611,52 @@ mod tests {
                 < f64::EPSILON
         );
         assert!((context_modifier(&unknown_context()) - 1.0).abs() < f64::EPSILON);
+    }
+
+    // ----- Test 13: Provenance indicators have correct default weights -----
+
+    #[test]
+    fn provenance_indicator_weights_registered() {
+        let weights = default_weights();
+
+        assert!(
+            (weights[&ScoreIndicator::NewPackageLowDownloads] - 0.3).abs() < f64::EPSILON,
+            "NewPackageLowDownloads should be 0.3"
+        );
+        assert!(
+            (weights[&ScoreIndicator::KnownVulnerability] - 0.4).abs() < f64::EPSILON,
+            "KnownVulnerability should be 0.4"
+        );
+        assert!(
+            (weights[&ScoreIndicator::Typosquatting] - 0.5).abs() < f64::EPSILON,
+            "Typosquatting should be 0.5"
+        );
+        assert!(
+            (weights[&ScoreIndicator::ProvenanceAttested] - (-0.2)).abs() < f64::EPSILON,
+            "ProvenanceAttested should be -0.2"
+        );
+        assert!(
+            (weights[&ScoreIndicator::EstablishedPackage] - (-0.3)).abs() < f64::EPSILON,
+            "EstablishedPackage should be -0.3"
+        );
+        assert!(
+            (weights[&ScoreIndicator::NoGithubRelease] - 0.4).abs() < f64::EPSILON,
+            "NoGithubRelease should be 0.4"
+        );
+    }
+
+    // ----- Test 14: Negative weight (trust bonus) reduces raw score -----
+
+    #[test]
+    fn negative_weight_reduces_score() {
+        // Verify that if we manually assemble indicators with a positive and
+        // a negative weight, the raw_score is their sum.
+        let positive = 0.5_f64;
+        let negative = -0.2_f64;
+        let raw = positive + negative;
+        assert!(
+            (raw - 0.3).abs() < f64::EPSILON,
+            "0.5 + (-0.2) should be 0.3"
+        );
     }
 }

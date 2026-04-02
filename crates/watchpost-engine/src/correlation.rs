@@ -204,6 +204,7 @@ mod tests {
             },
             ancestry: vec![],
             context,
+            provenance: None,
         }
     }
 

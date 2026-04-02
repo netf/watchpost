@@ -3,6 +3,7 @@ pub mod context;
 pub mod grpc;
 pub mod manifest;
 pub mod proto;
+pub mod provenance;
 
 /// Generated Tetragon protobuf types.
 pub mod tetragon {
@@ -13,20 +14,22 @@ use anyhow::{Context, Result};
 use futures::StreamExt;
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
-use watchpost_types::{CollectorConfig, EnrichedEvent, EventKind};
+use watchpost_types::{ActionContext, CollectorConfig, EnrichedEvent, EventKind};
 
 use crate::ancestry::ProcessAncestryBuilder;
 use crate::context::ActionContextInferrer;
 use crate::grpc::TetragonClient;
 use crate::manifest::PackageManifestCache;
+use crate::provenance::ProvenanceEnricher;
 
 /// The main collector that wires together the gRPC client, process ancestry
-/// builder, context inferrer, and package manifest cache into a single
-/// event-processing pipeline.
+/// builder, context inferrer, package manifest cache, and provenance enricher
+/// into a single event-processing pipeline.
 pub struct Collector {
     client: TetragonClient,
     ancestry: ProcessAncestryBuilder,
     manifest_cache: PackageManifestCache,
+    provenance_enricher: ProvenanceEnricher,
     max_ancestry_depth: usize,
 }
 
@@ -43,6 +46,7 @@ impl Collector {
 
         let ancestry = ProcessAncestryBuilder::new();
         let manifest_cache = PackageManifestCache::new(collector_config.manifest_cache_size);
+        let provenance_enricher = ProvenanceEnricher::new();
         let max_ancestry_depth = collector_config.max_ancestry_depth;
 
         debug!(
@@ -56,6 +60,7 @@ impl Collector {
             client,
             ancestry,
             manifest_cache,
+            provenance_enricher,
             max_ancestry_depth,
         })
     }
@@ -102,10 +107,21 @@ impl Collector {
             // Infer action context from ancestry.
             let context = ActionContextInferrer::infer(&ancestry);
 
+            // For PackageInstall events, perform an async provenance lookup.
+            let provenance = match &context {
+                ActionContext::PackageInstall {
+                    ecosystem,
+                    package_name: Some(pkg),
+                    ..
+                } => self.provenance_enricher.lookup(ecosystem, pkg).await,
+                _ => None,
+            };
+
             let enriched = EnrichedEvent {
                 event,
                 ancestry,
                 context,
+                provenance,
             };
 
             // Send enriched event; don't block if the channel is full.
