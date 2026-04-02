@@ -1,0 +1,52 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: watchpost-install-script-gate
+spec:
+  lsmhooks:
+    - hook: "bprm_check_security"
+      args:
+        - index: 0
+          type: "linux_binprm"
+      selectors:
+        # Selector 1: Scripts executed from temporary directories by package managers
+        - matchArgs:
+            - index: 0
+              operator: Prefix
+              values:
+                - "/tmp/"
+                - "/var/tmp/"
+                - "/dev/shm/"
+          matchBinaries:
+            - operator: In
+              values:
+                - "/usr/bin/node"
+                - "/usr/bin/npm"
+                - "/usr/bin/npx"
+                - "/usr/bin/yarn"
+                - "/usr/bin/pnpm"
+                - "/usr/bin/python3"
+                - "/usr/bin/pip"
+                - "/usr/bin/pip3"
+                - "/usr/bin/cargo"
+          matchActions:
+            - action: Override
+              argError: -1
+        # Selector 2: Hook scripts from package manager directories
+        - matchArgs:
+            - index: 0
+              operator: Prefix
+              values:
+                - "node_modules/"
+                - ".npm/"
+                - "site-packages/"
+          matchBinaries:
+            - operator: In
+              values:
+                - "/usr/bin/sh"
+                - "/usr/bin/bash"
+                - "/usr/bin/node"
+                - "/usr/bin/python3"
+          matchActions:
+            - action: Override
+              argError: -1

@@ -25,6 +25,7 @@ serde.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
+serde_yml.workspace = true
 
 [build-dependencies]
 tonic-build = "0.12"

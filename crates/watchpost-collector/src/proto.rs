@@ -192,10 +192,12 @@ pub fn convert_lsm(lsm: &ProcessLsm) -> Result<Option<TetragonEvent>> {
         }
         "bprm_check_security" => {
             let script_path = extract_binprm_path(&lsm.args);
+            let paused =
+                lsm.action == crate::tetragon::KprobeAction::Override as i32;
             EventKind::ScriptExec {
                 script_path: script_path.clone(),
                 interpreter: process.binary.clone(),
-                paused: false,
+                paused,
             }
         }
         other => {
@@ -734,5 +736,147 @@ mod tests {
         assert_eq!(signal_name_to_number("9"), Some(9));
         assert_eq!(signal_name_to_number("UNKNOWN_SIGNAL"), None);
         assert_eq!(signal_name_to_number(""), None);
+    }
+
+    #[test]
+    fn lsm_bprm_override_sets_paused_true() {
+        let lsm = ProcessLsm {
+            process: Some(mock_process(7000, "/usr/bin/node", "")),
+            parent: None,
+            function_name: "bprm_check_security".to_owned(),
+            policy_name: "watchpost-install-script-gate".to_owned(),
+            message: String::new(),
+            args: vec![KprobeArgument {
+                label: String::new(),
+                arg: Some(kprobe_argument::Arg::LinuxBinprmArg(KprobeLinuxBinprm {
+                    path: "/tmp/postinstall.sh".to_owned(),
+                    flags: String::new(),
+                    permission: String::new(),
+                })),
+            }],
+            action: crate::tetragon::KprobeAction::Override as i32, // 5
+            tags: vec![],
+            ancestors: vec![],
+            ima_hash: String::new(),
+        };
+
+        let resp = GetEventsResponse {
+            node_name: String::new(),
+            time: None,
+            aggregation_info: None,
+            cluster_name: String::new(),
+            node_labels: Default::default(),
+            event: Some(get_events_response::Event::ProcessLsm(lsm)),
+        };
+
+        let result = convert_response(&resp).expect("conversion should succeed");
+        let event = result.expect("should produce an event");
+
+        match &event.kind {
+            EventKind::ScriptExec {
+                script_path,
+                interpreter,
+                paused,
+            } => {
+                assert_eq!(script_path, "/tmp/postinstall.sh");
+                assert_eq!(interpreter, "/usr/bin/node");
+                assert!(
+                    *paused,
+                    "Override action should set paused to true"
+                );
+            }
+            other => panic!("expected ScriptExec, got {other:?}"),
+        }
+        assert_eq!(
+            event.policy_name.as_deref(),
+            Some("watchpost-install-script-gate")
+        );
+    }
+
+    #[test]
+    fn lsm_bprm_post_sets_paused_false() {
+        let lsm = ProcessLsm {
+            process: Some(mock_process(7001, "/usr/bin/bash", "")),
+            parent: None,
+            function_name: "bprm_check_security".to_owned(),
+            policy_name: "watchpost-tmp-execution".to_owned(),
+            message: String::new(),
+            args: vec![KprobeArgument {
+                label: String::new(),
+                arg: Some(kprobe_argument::Arg::LinuxBinprmArg(KprobeLinuxBinprm {
+                    path: "/tmp/safe-script.sh".to_owned(),
+                    flags: String::new(),
+                    permission: String::new(),
+                })),
+            }],
+            action: crate::tetragon::KprobeAction::Post as i32, // 1
+            tags: vec![],
+            ancestors: vec![],
+            ima_hash: String::new(),
+        };
+
+        let resp = GetEventsResponse {
+            node_name: String::new(),
+            time: None,
+            aggregation_info: None,
+            cluster_name: String::new(),
+            node_labels: Default::default(),
+            event: Some(get_events_response::Event::ProcessLsm(lsm)),
+        };
+
+        let result = convert_response(&resp).expect("conversion should succeed");
+        let event = result.expect("should produce an event");
+
+        match &event.kind {
+            EventKind::ScriptExec {
+                script_path,
+                interpreter,
+                paused,
+            } => {
+                assert_eq!(script_path, "/tmp/safe-script.sh");
+                assert_eq!(interpreter, "/usr/bin/bash");
+                assert!(
+                    !*paused,
+                    "Post action should set paused to false"
+                );
+            }
+            other => panic!("expected ScriptExec, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn install_script_gate_policy_is_valid_yaml() {
+        let yaml_content =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../policies/install-script-gate.yaml"))
+                .expect("policy file should exist");
+        let doc: serde_yml::Value =
+            serde_yml::from_str(&yaml_content).expect("policy should be valid YAML");
+
+        // Verify basic structure
+        assert_eq!(
+            doc["apiVersion"].as_str().unwrap(),
+            "cilium.io/v1alpha1"
+        );
+        assert_eq!(doc["kind"].as_str().unwrap(), "TracingPolicy");
+        assert_eq!(
+            doc["metadata"]["name"].as_str().unwrap(),
+            "watchpost-install-script-gate"
+        );
+
+        let hooks = doc["spec"]["lsmhooks"].as_sequence().unwrap();
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(
+            hooks[0]["hook"].as_str().unwrap(),
+            "bprm_check_security"
+        );
+
+        let selectors = hooks[0]["selectors"].as_sequence().unwrap();
+        assert_eq!(selectors.len(), 2, "should have two selectors");
+
+        // Both selectors should use Override action
+        for sel in selectors {
+            let action = sel["matchActions"][0]["action"].as_str().unwrap();
+            assert_eq!(action, "Override");
+        }
     }
 }
