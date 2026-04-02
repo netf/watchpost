@@ -1,0 +1,29 @@
+- name: any-crypto-mining-port
+  description: "Outbound connection to a known cryptocurrency mining pool port"
+  severity: critical
+  conditions:
+    dest_port_is:
+      - 3333
+      - 4444
+      - 14444
+      - 45700
+  action: block
+
+- name: flatpak-host-file-escape
+  description: "Flatpak sandboxed application accessing host files outside its sandbox"
+  severity: high
+  conditions:
+    and:
+      - in_flatpak_sandbox: null
+      - file_path_starts_with:
+          - /home/
+          - /etc/
+  action: block
+
+- name: any-dns-exfiltration
+  description: "High-entropy DNS query suggesting possible data exfiltration"
+  severity: medium
+  conditions:
+    dns_query_high_entropy:
+      threshold: 4.0
+  action: defer_to_llm

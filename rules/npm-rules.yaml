@@ -1,0 +1,49 @@
+- name: npm-reverse-shell
+  description: "npm lifecycle script connecting to a reverse shell port or spawning a known reverse shell binary"
+  severity: critical
+  conditions:
+    and:
+      - ancestor_binary_matches:
+          - npm
+          - npx
+          - yarn
+          - pnpm
+      - or:
+          - dest_port_is:
+              - 4444
+              - 5555
+              - 1337
+              - 9001
+          - binary_matches:
+              - nc
+              - ncat
+              - socat
+  action: block
+
+- name: npm-temp-dir-exec
+  description: "npm lifecycle script executing a binary from a temporary directory"
+  severity: critical
+  conditions:
+    and:
+      - ancestor_binary_matches:
+          - npm
+          - npx
+          - yarn
+          - pnpm
+      - exec_from_temp_dir: null
+  action: block
+
+- name: npm-ssh-key-access
+  description: "npm lifecycle script accessing SSH key material"
+  severity: high
+  conditions:
+    and:
+      - ancestor_binary_matches:
+          - npm
+          - npx
+          - yarn
+          - pnpm
+      - file_path_starts_with:
+          - ".ssh/"
+          - /home/.ssh/
+  action: block

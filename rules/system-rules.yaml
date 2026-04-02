@@ -1,0 +1,21 @@
+- name: any-temp-dir-exec
+  description: "Process executed from a temporary directory"
+  severity: medium
+  conditions:
+    exec_from_temp_dir: null
+  action: notify
+
+- name: any-unexpected-privilege-change
+  description: "Unexpected privilege escalation detected from a non-privileged context"
+  severity: high
+  conditions:
+    privilege_change: null
+  action: block
+
+- name: any-immutability-violation
+  description: "File write to immutable OS directory detected"
+  severity: critical
+  conditions:
+    file_path_starts_with:
+      - /usr/
+  action: block

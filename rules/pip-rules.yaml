@@ -1,0 +1,18 @@
+- name: pip-sensitive-file-access
+  description: "pip/pipx/uv lifecycle script accessing sensitive credential or browser profile files"
+  severity: high
+  conditions:
+    and:
+      - ancestor_binary_matches:
+          - pip
+          - pip3
+          - pipx
+          - uv
+      - or:
+          - file_path_starts_with:
+              - ".ssh/"
+              - ".gnupg/"
+              - ".mozilla/firefox/"
+              - ".config/google-chrome/"
+              - ".config/chromium/"
+  action: block

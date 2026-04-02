@@ -583,4 +583,135 @@ mod tests {
         let verdict2 = engine.evaluate(&trace2);
         assert!(verdict2.is_none(), "Expected no verdict for normal DNS query");
     }
+
+    // ---- Shipped rule YAML tests ----
+
+    /// Load all shipped YAML rules from the workspace rules/ directory.
+    fn load_shipped_rules() -> Vec<Rule> {
+        let rules_dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../rules");
+        crate::loader::load_rules_from_dir(&rules_dir)
+            .expect("Failed to load shipped rules from rules/ directory")
+    }
+
+    #[test]
+    fn shipped_rules_load_exactly_10() {
+        let rules = load_shipped_rules();
+        assert_eq!(
+            rules.len(),
+            10,
+            "Expected exactly 10 shipped rules, got {}",
+            rules.len()
+        );
+    }
+
+    #[test]
+    fn shipped_rules_sorted_critical_first() {
+        let rules = load_shipped_rules();
+
+        // Walk the rules and verify severity is non-increasing (Critical >= High >= ...)
+        for window in rules.windows(2) {
+            assert!(
+                window[0].severity >= window[1].severity,
+                "Rules not sorted by severity: '{}' ({:?}) came before '{}' ({:?})",
+                window[0].name,
+                window[0].severity,
+                window[1].name,
+                window[1].severity,
+            );
+        }
+
+        // First rule must be Critical
+        assert_eq!(
+            rules[0].severity,
+            Severity::Critical,
+            "First shipped rule should be Critical"
+        );
+    }
+
+    #[test]
+    fn shipped_rule_npm_reverse_shell_matches() {
+        let rules = load_shipped_rules();
+        let engine = RuleEngine::new(rules);
+
+        // npm ancestor + port 4444 should trigger npm-reverse-shell
+        let trace = make_trace(vec![npm_network_event(4444)], npm_context());
+        let verdict = engine.evaluate(&trace);
+        assert!(verdict.is_some(), "npm-reverse-shell should match");
+        let v = verdict.unwrap();
+        assert!(
+            v.explanation.contains("npm-reverse-shell"),
+            "Expected npm-reverse-shell match, got: {}",
+            v.explanation,
+        );
+        assert_eq!(v.recommended_action, RecommendedAction::Block);
+    }
+
+    #[test]
+    fn shipped_rule_any_temp_dir_exec_matches() {
+        let rules = load_shipped_rules();
+        let engine = RuleEngine::new(rules);
+
+        // A temp-dir exec without npm ancestry should hit any-temp-dir-exec
+        let trace = make_trace(
+            vec![exec_event(
+                "/tmp/test",
+                vec![AncestryEntry {
+                    pid: 100,
+                    binary_path: "/usr/bin/bash".to_owned(),
+                    cmdline: "bash".to_owned(),
+                }],
+                cargo_context(),
+            )],
+            cargo_context(),
+        );
+        let verdict = engine.evaluate(&trace);
+        assert!(verdict.is_some(), "any-temp-dir-exec should match");
+        let v = verdict.unwrap();
+        assert!(
+            v.explanation.contains("any-temp-dir-exec"),
+            "Expected any-temp-dir-exec match, got: {}",
+            v.explanation,
+        );
+        assert_eq!(v.recommended_action, RecommendedAction::Notify);
+    }
+
+    #[test]
+    fn shipped_rule_any_crypto_mining_port_matches() {
+        let rules = load_shipped_rules();
+        let engine = RuleEngine::new(rules);
+
+        // Outbound connection to port 3333 should trigger any-crypto-mining-port
+        let mining_event = EnrichedEvent {
+            event: TetragonEvent {
+                id: Uuid::new_v4(),
+                timestamp: Utc::now(),
+                kind: EventKind::NetworkConnect {
+                    dest_ip: "pool.mining.com".to_owned(),
+                    dest_port: 3333,
+                    protocol: "tcp".to_owned(),
+                },
+                process_id: 7000,
+                parent_id: Some(6999),
+                policy_name: None,
+            },
+            ancestry: vec![AncestryEntry {
+                pid: 6999,
+                binary_path: "/usr/bin/bash".to_owned(),
+                cmdline: "bash".to_owned(),
+            }],
+            context: ActionContext::Unknown,
+        };
+
+        let trace = make_trace(vec![mining_event], ActionContext::Unknown);
+        let verdict = engine.evaluate(&trace);
+        assert!(verdict.is_some(), "any-crypto-mining-port should match");
+        let v = verdict.unwrap();
+        assert!(
+            v.explanation.contains("any-crypto-mining-port"),
+            "Expected any-crypto-mining-port match, got: {}",
+            v.explanation,
+        );
+        assert_eq!(v.recommended_action, RecommendedAction::Block);
+    }
 }
