@@ -42,6 +42,8 @@ pub enum Command {
         #[command(subcommand)]
         action: GateAction,
     },
+    /// Launch the terminal UI dashboard
+    Tui,
 }
 
 #[derive(Subcommand)]

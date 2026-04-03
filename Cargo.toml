@@ -8,6 +8,7 @@ members = [
     "crates/watchpost-analyzer",
     "crates/watchpost-policy",
     "crates/watchpost-notify",
+    "crates/watchpost-tui",
 ]
 
 [workspace.package]
@@ -23,6 +24,7 @@ watchpost-rules = { path = "crates/watchpost-rules" }
 watchpost-analyzer = { path = "crates/watchpost-analyzer" }
 watchpost-policy = { path = "crates/watchpost-policy" }
 watchpost-notify = { path = "crates/watchpost-notify" }
+watchpost-tui = { path = "crates/watchpost-tui" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yml = "0.0.12"
@@ -52,6 +54,7 @@ watchpost-rules.workspace = true
 watchpost-analyzer.workspace = true
 watchpost-policy.workspace = true
 watchpost-notify.workspace = true
+watchpost-tui.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

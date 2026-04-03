@@ -44,6 +44,12 @@ async fn main() -> anyhow::Result<()> {
             handle_allowlist(action, &config)
         }
         cli::Command::Gate { action } => handle_gate(action),
+        cli::Command::Tui => {
+            let app = watchpost_tui::App::new();
+            // TODO: In future, connect to daemon via Unix socket to populate live data
+            // For now, start with empty state (demo mode)
+            watchpost_tui::run::run_tui(app).await
+        }
     }
 }
 
@@ -232,6 +238,7 @@ mod tests {
         assert!(help.contains("policy"));
         assert!(help.contains("allowlist"));
         assert!(help.contains("gate"));
+        assert!(help.contains("tui"));
     }
 
     #[test]
