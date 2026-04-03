@@ -106,7 +106,7 @@ impl EventLog {
 
         self.conn
             .execute(
-                "INSERT INTO events (id, timestamp, kind, process_id, binary_path, context_type, severity, raw_json)
+                "INSERT OR IGNORE INTO events (id, timestamp, kind, process_id, binary_path, context_type, severity, raw_json)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     event.event.id.to_string(),
