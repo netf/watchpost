@@ -20,15 +20,17 @@ pub async fn run_init(api_key: Option<String>, template: Option<String>) -> Resu
 
     match &api_key {
         Some(key) => {
-            let redacted = if key.len() > 10 {
-                format!("{}...{}", &key[..7], &key[key.len() - 4..])
+            if !is_valid_api_key(key) {
+                term.write_line(&st::warning(&format!(
+                    "API key doesn't look like a valid Anthropic key (expected sk-ant-...): {}",
+                    style(key).dim()
+                )))?;
             } else {
-                "***".to_string()
-            };
-            term.write_line(&st::success(&format!(
-                "API key: {}",
-                style(&redacted).dim()
-            )))?;
+                term.write_line(&st::success(&format!(
+                    "API key: {}",
+                    style(key).dim()
+                )))?;
+            }
         }
         None => {
             term.write_line(&st::warning(
@@ -209,18 +211,35 @@ fn resolve_api_key(api_key: Option<String>, term: &Term) -> Result<Option<String
 
     // Only prompt interactively if we have a real terminal
     if term.is_term() {
-        let key: String = dialoguer::Password::new()
-            .with_prompt("  Anthropic API key")
-            .interact()
-            .context("reading API key from terminal")?;
-        if key.is_empty() {
-            return Ok(None);
+        loop {
+            let key: String = dialoguer::Input::new()
+                .with_prompt("  Anthropic API key (sk-ant-...)")
+                .allow_empty(true)
+                .interact_text()
+                .context("reading API key from terminal")?;
+
+            if key.is_empty() {
+                return Ok(None);
+            }
+
+            if is_valid_api_key(&key) {
+                return Ok(Some(key));
+            }
+
+            term.write_line(&st::warning(
+                "Invalid key format. Anthropic keys start with sk-ant-",
+            ))?;
         }
-        return Ok(Some(key));
     }
 
     Ok(None)
 }
+
+/// Check if a string looks like a valid Anthropic API key.
+fn is_valid_api_key(key: &str) -> bool {
+    key.starts_with("sk-ant-") && key.len() > 20
+}
+
 
 /// Load a policy template by name from the `templates/` directory.
 fn load_template(name: &str) -> Result<PolicyTemplate> {
