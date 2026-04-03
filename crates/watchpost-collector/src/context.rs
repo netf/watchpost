@@ -2,6 +2,8 @@ use watchpost_types::context::{ActionContext, Ecosystem};
 use watchpost_types::events::AncestryEntry;
 use watchpost_types::util::{binary_basename, SHELLS};
 
+use crate::flatpak::{extract_app_id_from_cgroup, FlatpakMetadata};
+
 /// Extracts the filename from an ancestry entry's binary path.
 fn binary_name(entry: &AncestryEntry) -> &str {
     binary_basename(&entry.binary_path)
@@ -59,13 +61,36 @@ impl ActionContextInferrer {
                     };
                 }
 
-                // Flatpak
+                // Flatpak (detected via `flatpak` binary in ancestry)
                 "flatpak" => {
                     let app_id = parse_flatpak_app_id(&entry.cmdline)
                         .unwrap_or_default();
+                    let permissions = FlatpakMetadata::read(&app_id)
+                        .map(|m| m.permissions)
+                        .unwrap_or_default();
                     return ActionContext::FlatpakApp {
                         app_id,
-                        permissions: Vec::new(),
+                        permissions,
+                    };
+                }
+
+                // Flatpak (detected via bwrap — sandboxed process without
+                // `flatpak` in direct ancestry). Try to extract app ID from
+                // the process cgroup.
+                "bwrap" => {
+                    let pid = ancestry.first().map(|e| e.pid).unwrap_or(0);
+                    let app_id = extract_app_id_from_cgroup(pid)
+                        .unwrap_or_default();
+                    let permissions = if !app_id.is_empty() {
+                        FlatpakMetadata::read(&app_id)
+                            .map(|m| m.permissions)
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+                    return ActionContext::FlatpakApp {
+                        app_id,
+                        permissions,
                     };
                 }
 

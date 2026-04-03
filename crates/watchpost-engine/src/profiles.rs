@@ -170,6 +170,7 @@ fn context_to_key(context: &ActionContext) -> &str {
             ..
         } => "cargo",
         ActionContext::Build { toolchain, .. } if toolchain == "cargo" => "cargo",
+        ActionContext::FlatpakApp { .. } => "flatpak",
         _ => "system",
     }
 }

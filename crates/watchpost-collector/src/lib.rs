@@ -1,5 +1,6 @@
 pub mod ancestry;
 pub mod context;
+pub mod flatpak;
 pub mod grpc;
 pub mod manifest;
 pub mod proto;

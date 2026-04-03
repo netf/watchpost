@@ -1,0 +1,19 @@
+context_type: FlatpakApp
+expected_network: []
+expected_children:
+  - bwrap
+  - xdg-dbus-proxy
+  - xdg-document-portal
+expected_file_writes: []
+forbidden_file_access:
+  - /etc/shadow
+  - /etc/sudoers
+  - .ssh/
+  - .gnupg/
+forbidden_children:
+  - nc
+  - ncat
+  - socat
+forbidden_network:
+  - port: 4444
+    description: "reverse shell port"
