@@ -145,11 +145,7 @@ impl Default for BehaviorProfileStore {
 /// context_type.
 fn profile_key(profile: &BehaviorProfile) -> String {
     match &profile.ecosystem {
-        Some(eco) => match eco {
-            Ecosystem::Npm => "npm".into(),
-            Ecosystem::Pip => "pip".into(),
-            Ecosystem::Cargo => "cargo".into(),
-        },
+        Some(eco) => eco.as_str().to_owned(),
         None => profile.context_type.to_lowercase(),
     }
 }

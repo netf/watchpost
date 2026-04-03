@@ -274,11 +274,21 @@ async fn merge_verdicts(
     loop {
         tokio::select! {
             verdict = rules_rx.recv() => match verdict {
-                Some(v) => { if merged_tx.send(v).await.is_err() { break; } }
+                Some(v) => {
+                    if merged_tx.send(v).await.is_err() {
+                        tracing::debug!("verdict merge channel closed");
+                        break;
+                    }
+                }
                 None => break,
             },
             verdict = analyzer_rx.recv() => match verdict {
-                Some(v) => { if merged_tx.send(v).await.is_err() { break; } }
+                Some(v) => {
+                    if merged_tx.send(v).await.is_err() {
+                        tracing::debug!("verdict merge channel closed");
+                        break;
+                    }
+                }
                 None => break,
             },
         }
