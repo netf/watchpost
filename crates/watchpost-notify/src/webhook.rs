@@ -108,9 +108,15 @@ impl WebhookForwarder {
             verdict: VerdictPayload {
                 id: verdict.id.to_string(),
                 trace_id: verdict.trace_id.to_string(),
-                classification: format!("{:?}", verdict.classification).to_lowercase(),
+                classification: serde_json::to_value(&verdict.classification)
+                    .ok()
+                    .and_then(|v| v.as_str().map(String::from))
+                    .unwrap_or_else(|| "unknown".to_string()),
                 confidence: verdict.confidence.value(),
-                recommended_action: format!("{:?}", verdict.recommended_action).to_lowercase(),
+                recommended_action: serde_json::to_value(&verdict.recommended_action)
+                    .ok()
+                    .and_then(|v| v.as_str().map(String::from))
+                    .unwrap_or_else(|| "unknown".to_string()),
                 explanation: verdict.explanation.clone(),
                 profile_violations: verdict.profile_violations.clone(),
                 timestamp: verdict.timestamp.to_rfc3339(),

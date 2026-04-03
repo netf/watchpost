@@ -1,6 +1,8 @@
 pub mod run;
 pub mod ui;
 
+use std::collections::VecDeque;
+
 /// The four panels of the dashboard.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Panel {
@@ -13,7 +15,7 @@ pub enum Panel {
 /// Application state for the TUI.
 pub struct App {
     pub active_panel: Panel,
-    pub events: Vec<EventEntry>,
+    pub events: VecDeque<EventEntry>,
     pub processes: Vec<ProcessEntry>,
     pub policies: Vec<PolicyEntry>,
     pub analyses: Vec<AnalysisEntry>,
@@ -66,7 +68,7 @@ impl App {
     pub fn new() -> Self {
         Self {
             active_panel: Panel::Events,
-            events: Vec::new(),
+            events: VecDeque::new(),
             processes: Vec::new(),
             policies: Vec::new(),
             analyses: Vec::new(),
@@ -101,9 +103,9 @@ impl App {
 
     /// Add an event entry, keeping only the last `MAX_EVENTS`.
     pub fn add_event(&mut self, entry: EventEntry) {
-        self.events.push(entry);
+        self.events.push_back(entry);
         if self.events.len() > MAX_EVENTS {
-            self.events.remove(0);
+            self.events.pop_front();
         }
     }
 

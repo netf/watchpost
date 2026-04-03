@@ -92,7 +92,7 @@ impl FlatpakMetadata {
     /// - `~/...` — literal path under the user's home directory
     /// - `/...` — literal absolute path prefix
     pub fn is_path_permitted(&self, path: &str) -> bool {
-        let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/home/user".to_string());
+        let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/home".to_string());
 
         for perm in &self.permissions {
             match perm.as_str() {
@@ -290,7 +290,7 @@ org.freedesktop.Notifications=talk
             permissions: vec!["xdg-download".into()],
         };
 
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/user".to_string());
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home".to_string());
         let downloads_path = format!("{home}/Downloads/file.pdf");
 
         assert!(
@@ -310,7 +310,7 @@ org.freedesktop.Notifications=talk
             permissions: vec!["~/.config/foo".into()],
         };
 
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/user".to_string());
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home".to_string());
 
         assert!(
             meta.is_path_permitted(&format!("{home}/.config/foo/settings.json")),

@@ -13,16 +13,20 @@ use crate::App;
 /// Run the TUI event loop. Takes over the terminal until the user presses 'q'.
 pub async fn run_tui(mut app: App) -> Result<()> {
     enable_raw_mode()?;
-    io::stdout().execute(EnterAlternateScreen)?;
-    let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
 
-    let result = run_loop(&mut terminal, &mut app).await;
+    // If anything after raw mode fails, we must still disable it.
+    let result = run_tui_inner(&mut app).await;
 
-    // Always clean up terminal state, even on error.
     disable_raw_mode()?;
-    io::stdout().execute(LeaveAlternateScreen)?;
+    let _ = io::stdout().execute(LeaveAlternateScreen);
 
     result
+}
+
+async fn run_tui_inner(app: &mut App) -> Result<()> {
+    io::stdout().execute(EnterAlternateScreen)?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
+    run_loop(&mut terminal, app).await
 }
 
 async fn run_loop(
