@@ -176,7 +176,7 @@ pub fn extract_app_id_from_cgroup(pid: u32) -> Option<String> {
 /// Parse a Flatpak app ID from raw cgroup file content.
 ///
 /// Exposed for testing without requiring `/proc` access.
-fn extract_app_id_from_cgroup_content(content: &str) -> Option<String> {
+pub fn extract_app_id_from_cgroup_content(content: &str) -> Option<String> {
     for line in content.lines() {
         // Find the "app-flatpak-" marker in the cgroup path
         if let Some(start) = line.find("app-flatpak-") {

@@ -15,13 +15,13 @@ pub struct WebhookForwarder {
 
 /// The JSON payload sent to the webhook.
 #[derive(Debug, Serialize)]
-pub(crate) struct WebhookPayload {
+pub struct WebhookPayload {
     pub event_type: &'static str,
     pub verdict: VerdictPayload,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct VerdictPayload {
+pub struct VerdictPayload {
     pub id: String,
     pub trace_id: String,
     pub classification: String,
@@ -102,7 +102,7 @@ impl WebhookForwarder {
     }
 
     /// Convert a `Verdict` into the webhook wire format.
-    pub(crate) fn from_verdict(verdict: &Verdict) -> WebhookPayload {
+    pub fn from_verdict(verdict: &Verdict) -> WebhookPayload {
         WebhookPayload {
             event_type: "verdict",
             verdict: VerdictPayload {

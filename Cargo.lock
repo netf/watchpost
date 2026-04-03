@@ -3008,6 +3008,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "dashmap",
+ "ratatui",
  "rusqlite",
  "serde",
  "serde_json",
@@ -3020,8 +3021,10 @@ dependencies = [
  "uuid",
  "watchpost-analyzer",
  "watchpost-collector",
+ "watchpost-notify",
  "watchpost-policy",
  "watchpost-rules",
+ "watchpost-tui",
  "watchpost-types",
 ]
 

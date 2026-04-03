@@ -23,5 +23,10 @@ watchpost-rules.workspace = true
 watchpost-collector.workspace = true
 watchpost-analyzer.workspace = true
 watchpost-policy.workspace = true
+watchpost-tui.workspace = true
+watchpost-notify.workspace = true
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile = "3"
+ratatui = "0.29"
+chrono.workspace = true
+uuid.workspace = true
