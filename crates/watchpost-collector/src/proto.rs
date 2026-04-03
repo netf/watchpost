@@ -121,6 +121,8 @@ pub fn convert_exit(exit: &ProcessExit) -> Result<TetragonEvent> {
 /// Maps known function names to the appropriate `EventKind`:
 /// - `tcp_connect`, `__sys_connect` -> `NetworkConnect`
 /// - `commit_creds` -> `PrivilegeChange`
+/// - `security_file_open`, `security_file_permission` -> `FileAccess`
+/// - `security_bprm_check`, `bprm_check_security` -> `ScriptExec`
 /// - others -> returns `Ok(None)`
 pub fn convert_kprobe(kp: &ProcessKprobe) -> Result<Option<TetragonEvent>> {
     let process = kp
@@ -146,6 +148,20 @@ pub fn convert_kprobe(kp: &ProcessKprobe) -> Result<Option<TetragonEvent>> {
                 old_uid,
                 new_uid,
                 function_name: kp.function_name.clone(),
+            }
+        }
+        "security_file_open" | "security_file_permission" => {
+            let (path, access_type) = extract_file_info(&kp.args);
+            EventKind::FileAccess { path, access_type }
+        }
+        "security_bprm_check" | "bprm_check_security" => {
+            let script_path = extract_binprm_path(&kp.args);
+            let paused =
+                kp.action == crate::tetragon::KprobeAction::Override as i32;
+            EventKind::ScriptExec {
+                script_path: script_path.clone(),
+                interpreter: process.binary.clone(),
+                paused,
             }
         }
         other => {
@@ -863,20 +879,20 @@ mod tests {
             "watchpost-install-script-gate"
         );
 
-        let hooks = doc["spec"]["lsmhooks"].as_sequence().unwrap();
-        assert_eq!(hooks.len(), 1);
+        let kprobes = doc["spec"]["kprobes"].as_sequence().unwrap();
+        assert_eq!(kprobes.len(), 1);
         assert_eq!(
-            hooks[0]["hook"].as_str().unwrap(),
-            "bprm_check_security"
+            kprobes[0]["call"].as_str().unwrap(),
+            "security_bprm_check"
         );
 
-        let selectors = hooks[0]["selectors"].as_sequence().unwrap();
+        let selectors = kprobes[0]["selectors"].as_sequence().unwrap();
         assert_eq!(selectors.len(), 2, "should have two selectors");
 
-        // Both selectors should use Override action
+        // Both selectors should use Post action (advisory mode on non-LSM kernels)
         for sel in selectors {
             let action = sel["matchActions"][0]["action"].as_str().unwrap();
-            assert_eq!(action, "Override");
+            assert_eq!(action, "Post");
         }
     }
 }

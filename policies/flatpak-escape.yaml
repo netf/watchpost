@@ -3,13 +3,12 @@ kind: TracingPolicy
 metadata:
   name: watchpost-flatpak-escape
 spec:
-  lsmhooks:
-    - hook: "security_file_permission"
+  kprobes:
+    - call: "security_file_open"
+      syscall: false
       args:
         - index: 0
           type: "file"
-        - index: 1
-          type: "int"
       selectors:
         - matchArgs:
             - index: 0
@@ -22,19 +21,5 @@ spec:
             - operator: In
               values:
                 - "/usr/bin/bwrap"
-          matchActions:
-            - action: Post
-        - matchArgs:
-            - index: 0
-              operator: Prefix
-              values:
-                - "/home/"
-                - "/etc/"
-                - "/root/"
-          matchNamespaces:
-            - namespace: Mnt
-              operator: NotIn
-              values:
-                - "host_mnt"
           matchActions:
             - action: Post

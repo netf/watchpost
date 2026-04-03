@@ -132,10 +132,12 @@ impl PolicyBuilder {
         self
     }
 
-    /// Add a file block rule using an LSM `security_file_permission` hook.
+    /// Add a file block rule using a kprobe on `security_file_open`.
     ///
-    /// The generated selector matches binaries in `binary_patterns` accessing
-    /// files under `path_prefixes`, applying a `Sigkill` action.
+    /// Uses `security_file_open` as a kprobe (not an LSM hook) so it works on
+    /// kernels without `lsm=bpf` enabled. The generated selector matches
+    /// binaries in `binary_patterns` accessing files under `path_prefixes`,
+    /// applying a `Sigkill` action.
     pub fn add_file_block(
         &mut self,
         binary_patterns: &[&str],
@@ -156,18 +158,13 @@ impl PolicyBuilder {
             }],
         };
 
-        self.lsmhooks.push(LsmHookSpec {
-            hook: "security_file_permission".to_string(),
-            args: vec![
-                ArgSpec {
-                    index: 0,
-                    arg_type: "file".to_string(),
-                },
-                ArgSpec {
-                    index: 1,
-                    arg_type: "int".to_string(),
-                },
-            ],
+        self.kprobes.push(KprobeSpec {
+            call: "security_file_open".to_string(),
+            syscall: false,
+            args: vec![ArgSpec {
+                index: 0,
+                arg_type: "file".to_string(),
+            }],
             selectors: vec![selector],
         });
 
@@ -226,7 +223,7 @@ mod tests {
         builder.add_file_block(&["/tmp/malware"], &["/etc/shadow", "/etc/passwd"]);
         let spec = builder.build();
 
-        assert!(spec.yaml_content.contains("security_file_permission"));
+        assert!(spec.yaml_content.contains("security_file_open"));
         assert!(spec.yaml_content.contains("/etc/shadow"));
         assert!(spec.yaml_content.contains("/etc/passwd"));
         assert!(spec.yaml_content.contains("Sigkill"));

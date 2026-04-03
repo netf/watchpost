@@ -3,8 +3,9 @@ kind: TracingPolicy
 metadata:
   name: watchpost-tmp-execution
 spec:
-  lsmhooks:
-    - hook: "bprm_check_security"
+  kprobes:
+    - call: "security_bprm_check"
+      syscall: false
       args:
         - index: 0
           type: "linux_binprm"

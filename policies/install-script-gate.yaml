@@ -3,8 +3,9 @@ kind: TracingPolicy
 metadata:
   name: watchpost-install-script-gate
 spec:
-  lsmhooks:
-    - hook: "bprm_check_security"
+  kprobes:
+    - call: "security_bprm_check"
+      syscall: false
       args:
         - index: 0
           type: "linux_binprm"
@@ -30,8 +31,7 @@ spec:
                 - "/usr/bin/pip3"
                 - "/usr/bin/cargo"
           matchActions:
-            - action: Override
-              argError: -1
+            - action: Post
         # Selector 2: Hook scripts from package manager directories
         - matchArgs:
             - index: 0
@@ -48,5 +48,4 @@ spec:
                 - "/usr/bin/node"
                 - "/usr/bin/python3"
           matchActions:
-            - action: Override
-              argError: -1
+            - action: Post

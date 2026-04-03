@@ -12,7 +12,7 @@ spec:
       selectors:
         - matchActions:
             - action: Post
-    - call: "__sys_dup3"
+    - call: "ksys_dup3"
       syscall: false
       args:
         - index: 0

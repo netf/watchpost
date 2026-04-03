@@ -582,17 +582,13 @@ mod tests {
                 "{filename}: first kprobe should be tcp_connect"
             );
 
-            // Check spec.lsmhooks exists with security_file_permission
+            // Toolchain policies should NOT have lsmhooks (kprobes only,
+            // since Tetragon v1.6.1 doesn't support mixed kprobes+lsmhooks
+            // and lsm=bpf is not enabled on the target kernel).
             let lsmhooks = &value["spec"]["lsmhooks"];
             assert!(
-                lsmhooks.is_sequence(),
-                "{filename}: spec.lsmhooks should be a list"
-            );
-            let lsm_hook = lsmhooks[0]["hook"].as_str();
-            assert_eq!(
-                lsm_hook,
-                Some("security_file_permission"),
-                "{filename}: first lsmhook should be security_file_permission"
+                lsmhooks.is_null() || !lsmhooks.is_sequence(),
+                "{filename}: spec.lsmhooks should not be present (kprobes-only policy)"
             );
 
             // Check that matchBinaries uses Post action (observe only)
@@ -601,13 +597,6 @@ mod tests {
                 kprobe_action,
                 Some("Post"),
                 "{filename}: kprobe matchActions should use Post action"
-            );
-
-            let lsm_action = lsmhooks[0]["selectors"][0]["matchActions"][0]["action"].as_str();
-            assert_eq!(
-                lsm_action,
-                Some("Post"),
-                "{filename}: lsmhook matchActions should use Post action"
             );
         }
     }

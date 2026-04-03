@@ -4,16 +4,14 @@ metadata:
   name: watchpost-dns-exfil
 spec:
   kprobes:
-    - call: "sys_sendto"
-      syscall: true
+    - call: "udp_sendmsg"
+      syscall: false
       args:
         - index: 0
-          type: "int"
-        - index: 4
-          type: "sockaddr"
+          type: "sock"
       selectors:
         - matchArgs:
-            - index: 4
+            - index: 0
               operator: DPort
               values:
                 - "53"
