@@ -166,10 +166,26 @@ fn run_status(config_path: &str) -> Result<()> {
     Ok(())
 }
 
-/// Check if the watchpost daemon is running via systemctl.
+/// Check if the watchpost daemon is running.
+/// Tries systemctl first (for systemd-managed installs), then falls back to
+/// checking for a running `watchpost daemon` process via pgrep.
 fn check_daemon_running() -> bool {
-    std::process::Command::new("systemctl")
+    // Check systemd service
+    let systemd = std::process::Command::new("systemctl")
         .args(["is-active", "--quiet", "watchpost"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if systemd {
+        return true;
+    }
+
+    // Fall back to checking for any running watchpost process
+    std::process::Command::new("pgrep")
+        .args(["-f", "watchpost daemon"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
