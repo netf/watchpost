@@ -1,14 +1,22 @@
 use std::process::Command;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
+use console::{style, Term};
+use indicatif::{ProgressBar, ProgressStyle};
 use watchpost_types::PolicyTemplate;
+
+use crate::style as st;
 
 /// Run the `watchpost init` command.
 pub async fn run_init(api_key: Option<String>, template: Option<String>) -> Result<()> {
-    println!("Watchpost — eBPF-powered desktop security\n");
+    let term = Term::stdout();
+
+    term.write_line(&st::header("Watchpost — eBPF-powered desktop security"))?;
+    term.write_line("")?;
 
     // 1. Resolve API key
-    let api_key = api_key.or_else(|| std::env::var("ANTHROPIC_API_KEY").ok());
+    let api_key = resolve_api_key(api_key, &term)?;
 
     match &api_key {
         Some(key) => {
@@ -17,51 +25,75 @@ pub async fn run_init(api_key: Option<String>, template: Option<String>) -> Resu
             } else {
                 "***".to_string()
             };
-            println!("  API key: {redacted}");
+            term.write_line(&st::success(&format!(
+                "API key: {}",
+                style(&redacted).dim()
+            )))?;
         }
         None => {
-            println!("  API key: not set (pass --api-key or set ANTHROPIC_API_KEY)");
+            term.write_line(&st::warning(
+                "API key: not set (pass --api-key or set ANTHROPIC_API_KEY)",
+            ))?;
         }
     }
 
-    // 2. Detect installed toolchains
-    let mut ecosystems: Vec<(&str, &str)> = Vec::new(); // (ecosystem_id, display_name)
+    // 2. Detect installed toolchains with a spinner
+    term.write_line(&st::header("Scanning toolchains..."))?;
 
-    let npm = which_any(&["npm", "npx", "yarn", "pnpm"]);
-    let cargo = which_any(&["cargo"]);
-    let pip = which_any(&["pip3", "pip", "uv", "pipx"]);
-    let flatpak = which_any(&["flatpak"]);
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ")
+            .template("    {spinner} {msg}")
+            .expect("valid spinner template"),
+    );
+    spinner.enable_steady_tick(Duration::from_millis(80));
 
-    if let Some(bin) = npm {
-        ecosystems.push(("npm", bin));
-    }
-    if let Some(bin) = cargo {
-        ecosystems.push(("cargo", bin));
-    }
-    if let Some(bin) = pip {
-        ecosystems.push(("pip", bin));
-    }
-    if let Some(bin) = flatpak {
-        ecosystems.push(("flatpak", bin));
-    }
+    let toolchains: &[(&str, &[&str])] = &[
+        ("npm", &["npm", "npx", "yarn", "pnpm"]),
+        ("cargo", &["cargo"]),
+        ("pip", &["pip3", "pip", "uv", "pipx"]),
+        ("flatpak", &["flatpak"]),
+    ];
 
-    println!("\n  Toolchains:");
-    if ecosystems.is_empty() {
-        println!("    (none detected)");
-    } else {
-        for (eco, bin) in &ecosystems {
-            println!("    {eco:<10} found ({bin})");
+    let mut ecosystems: Vec<(&str, &str)> = Vec::new();
+    let mut not_found: Vec<&str> = Vec::new();
+
+    for (eco, bins) in toolchains {
+        spinner.set_message(format!("checking {eco}..."));
+        if let Some(bin) = which_any(bins) {
+            ecosystems.push((eco, bin));
+        } else {
+            not_found.push(eco);
         }
+    }
+
+    spinner.finish_and_clear();
+
+    for (eco, bin) in &ecosystems {
+        term.write_line(&st::success(&format!(
+            "{:<10} {}",
+            eco,
+            style(format!("(via {bin})")).dim()
+        )))?;
+    }
+    for eco in &not_found {
+        term.write_line(&st::failure(&format!(
+            "{:<10} {}",
+            eco,
+            style("(not found)").dim()
+        )))?;
     }
 
     // 3. Determine policies
     let policy_list: Vec<String> = if let Some(ref template_name) = template {
         let tpl = load_template(template_name)?;
-        println!(
-            "\n  Template: {} ({} policies)",
-            tpl.name,
-            tpl.policies.len()
-        );
+        term.write_line(&format!(
+            "\n  {} {} {}",
+            style(tpl.policies.len()).bold(),
+            "policies from template",
+            style(&tpl.name).bold()
+        ))?;
         tpl.policies
     } else {
         let mut policies: Vec<String> = vec![
@@ -79,12 +111,13 @@ pub async fn run_init(api_key: Option<String>, template: Option<String>) -> Resu
                 _ => {}
             }
         }
-        println!(
-            "\n  Policies: {} base + {} toolchain = {} total",
+        let toolchain_count = policies.len() - 5;
+        term.write_line(&format!(
+            "\n  {} policies selected ({} base + {} toolchain)",
+            style(policies.len()).bold(),
             5,
-            policies.len() - 5,
-            policies.len()
-        );
+            toolchain_count
+        ))?;
         policies
     };
 
@@ -107,12 +140,11 @@ desktop = true
     let config_path = "/etc/watchpost/config.toml";
     let policy_dir = "/etc/tetragon/tetragon.tp.d";
 
-    println!();
+    term.write_line("")?;
     if is_root {
-        // Actually write config and copy policies
         std::fs::create_dir_all("/etc/watchpost")?;
         std::fs::write(config_path, &config_toml)?;
-        println!("  Config written to {config_path}");
+        term.write_line(&st::success(&format!("Config written to {config_path}")))?;
 
         std::fs::create_dir_all(policy_dir)?;
         let policies_src = find_policies_dir();
@@ -125,33 +157,69 @@ desktop = true
                 installed += 1;
             }
         }
-        println!("  {installed} policies installed to {policy_dir}");
+        term.write_line(&st::success(&format!(
+            "{installed} policies installed to {policy_dir}"
+        )))?;
 
         if api_key.is_some() {
-            println!("\n  Ready! Start the daemon with:\n    sudo systemctl start watchpost");
+            term.write_line(&format!(
+                "\n  {} Start the daemon with:",
+                style("Ready!").green().bold()
+            ))?;
+            term.write_line(&st::hint("sudo systemctl start watchpost"))?;
         } else {
-            println!("\n  Almost ready — add your API key:");
-            println!("    sudo nano {config_path}");
-            println!("  Then start the daemon:");
-            println!("    sudo systemctl start watchpost");
+            term.write_line(&st::warning("Almost ready -- add your API key:"))?;
+            term.write_line(&st::hint(&format!("sudo nano {config_path}")))?;
+            term.write_line(&format!(
+                "    {}",
+                style("Then start the daemon:").dim()
+            ))?;
+            term.write_line(&st::hint("sudo systemctl start watchpost"))?;
         }
     } else {
-        // Print instructions for manual setup
-        println!("  Not running as root. To complete setup:\n");
-        println!("    sudo mkdir -p /etc/watchpost");
-        println!("    sudo mkdir -p {policy_dir}");
-        println!("    sudo watchpost init{}{}",
-            api_key.as_ref().map(|k| format!(" --api-key {k}")).unwrap_or_default(),
-            template.as_ref().map(|t| format!(" --template {t}")).unwrap_or_default(),
-        );
-        println!();
-        println!("  Or manually write the config:");
-        println!("    sudo tee {config_path} << 'EOF'");
-        print!("{config_toml}");
-        println!("EOF");
+        term.write_line(&st::warning("Not running as root. Run with sudo to install:"))?;
+        term.write_line(&st::hint(&format!(
+            "sudo watchpost init{}{}",
+            api_key
+                .as_ref()
+                .map(|_| " --api-key <key>")
+                .unwrap_or(""),
+            template
+                .as_ref()
+                .map(|t| format!(" --template {t}"))
+                .unwrap_or_default(),
+        )))?;
     }
 
+    term.write_line("")?;
     Ok(())
+}
+
+/// Resolve the API key: CLI flag > env var > interactive prompt (if TTY).
+fn resolve_api_key(api_key: Option<String>, term: &Term) -> Result<Option<String>> {
+    if let Some(key) = api_key {
+        return Ok(Some(key));
+    }
+
+    if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+        if !key.is_empty() {
+            return Ok(Some(key));
+        }
+    }
+
+    // Only prompt interactively if we have a real terminal
+    if term.is_term() {
+        let key: String = dialoguer::Password::new()
+            .with_prompt("  Anthropic API key")
+            .interact()
+            .context("reading API key from terminal")?;
+        if key.is_empty() {
+            return Ok(None);
+        }
+        return Ok(Some(key));
+    }
+
+    Ok(None)
 }
 
 /// Load a policy template by name from the `templates/` directory.
@@ -209,7 +277,6 @@ fn find_policies_dir() -> std::path::PathBuf {
             return path.clone();
         }
     }
-    // Fallback — caller will handle missing files
     std::path::PathBuf::from("policies")
 }
 

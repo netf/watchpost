@@ -1,11 +1,15 @@
 mod cli;
 mod daemon;
 mod init;
+mod style;
 
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 use clap::Parser;
+use console::style;
+use watchpost_notify::event_log::{EventFilter, EventLog};
 use watchpost_types::WatchpostConfig;
 
 /// Load the configuration file from the given path.
@@ -18,9 +22,17 @@ fn load_config(path: &str) -> Result<WatchpostConfig> {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() {
     let cli = cli::Cli::parse();
 
+    let result = run(cli).await;
+    if let Err(err) = result {
+        style::error_display(&err);
+        std::process::exit(1);
+    }
+}
+
+async fn run(cli: cli::Cli) -> Result<()> {
     match cli.command {
         cli::Command::Init { api_key, template } => init::run_init(api_key, template).await,
         cli::Command::Daemon => {
@@ -28,12 +40,10 @@ async fn main() -> anyhow::Result<()> {
             daemon::run_daemon(config).await
         }
         cli::Command::Status => {
-            println!("Status command not yet implemented");
-            Ok(())
+            run_status(&cli.config)
         }
-        cli::Command::Events { action: _ } => {
-            println!("Events command not yet implemented");
-            Ok(())
+        cli::Command::Events { action } => {
+            run_events(&cli.config, action)
         }
         cli::Command::Policy { action } => {
             let config = load_config(&cli.config)?;
@@ -46,10 +56,389 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Gate { action } => handle_gate(action),
         cli::Command::Tui => {
             let app = watchpost_tui::App::new();
-            // TODO: In future, connect to daemon via Unix socket to populate live data
-            // For now, start with empty state (demo mode)
             watchpost_tui::run::run_tui(app).await
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Status command
+// ---------------------------------------------------------------------------
+
+fn run_status(config_path: &str) -> Result<()> {
+    let term = console::Term::stdout();
+
+    term.write_line(&format!(
+        "\n  {}",
+        style(format!("Watchpost v{}", env!("CARGO_PKG_VERSION"))).bold()
+    ))?;
+    term.write_line("")?;
+
+    // Load config (best-effort: show what we can even if config is missing)
+    let config = match load_config(config_path) {
+        Ok(c) => Some(c),
+        Err(_) => {
+            term.write_line(&format!(
+                "  {:<14}{}",
+                style("Config:").dim(),
+                style(format!("not found ({config_path})")).yellow()
+            ))?;
+            None
+        }
+    };
+
+    // Daemon status -- just check if the systemd service is active
+    let daemon_status = check_daemon_running();
+    let daemon_display = if daemon_status {
+        style("running").green().to_string()
+    } else {
+        style("not running").yellow().to_string()
+    };
+    term.write_line(&format!("  {:<14}{}", style("Daemon:").dim(), daemon_display))?;
+
+    if let Some(ref config) = config {
+        // Tetragon socket
+        let endpoint = &config.advanced.tetragon.endpoint;
+        let socket_path = endpoint
+            .strip_prefix("unix://")
+            .unwrap_or(endpoint);
+        let tetragon_status = if std::path::Path::new(socket_path).exists() {
+            format!(
+                "{} {}",
+                style("connected").green(),
+                style(format!("({endpoint})")).dim()
+            )
+        } else {
+            format!(
+                "{} {}",
+                style("not found").yellow(),
+                style(format!("({endpoint})")).dim()
+            )
+        };
+        term.write_line(&format!("  {:<14}{}", style("Tetragon:").dim(), tetragon_status))?;
+
+        // Events DB
+        let data_dir = PathBuf::from(&config.daemon.data_dir);
+        let db_path = data_dir.join("events.db");
+        if db_path.exists() {
+            let size = std::fs::metadata(&db_path)
+                .map(|m| format_file_size(m.len()))
+                .unwrap_or_else(|_| "?".to_string());
+            term.write_line(&format!(
+                "  {:<14}{} {}",
+                style("Events DB:").dim(),
+                db_path.display(),
+                style(format!("({size})")).dim()
+            ))?;
+
+            // Try to query some stats
+            if let Ok(log) = EventLog::open(&db_path) {
+                term.write_line("")?;
+                term.write_line(&format!("  {}", style("Last 24h:").bold()))?;
+
+                let since_24h = Utc::now() - chrono::Duration::hours(24);
+                let filter = EventFilter {
+                    since: Some(since_24h),
+                    limit: usize::MAX,
+                    ..Default::default()
+                };
+                let event_count = log
+                    .query_events(&filter)
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+
+                term.write_line(&format!(
+                    "    {:<20} {}",
+                    "Events processed:",
+                    style(format_number(event_count)).bold()
+                ))?;
+            }
+        } else {
+            term.write_line(&format!(
+                "  {:<14}{}",
+                style("Events DB:").dim(),
+                style(format!("{} (not found)", db_path.display())).yellow()
+            ))?;
+        }
+    }
+
+    term.write_line("")?;
+    Ok(())
+}
+
+/// Check if the watchpost daemon is running via systemctl.
+fn check_daemon_running() -> bool {
+    std::process::Command::new("systemctl")
+        .args(["is-active", "--quiet", "watchpost"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Format a byte count as a human-readable string.
+fn format_file_size(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else if bytes < 1024 * 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.1} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+    }
+}
+
+/// Format a number with thousands separators.
+fn format_number(n: usize) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    for (i, ch) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            result.push(',');
+        }
+        result.push(ch);
+    }
+    result.chars().rev().collect()
+}
+
+// ---------------------------------------------------------------------------
+// Events command
+// ---------------------------------------------------------------------------
+
+fn run_events(config_path: &str, action: cli::EventsAction) -> Result<()> {
+    match action {
+        cli::EventsAction::List {
+            since,
+            until,
+            severity,
+            classification,
+            binary,
+            context,
+            format,
+            limit,
+        } => run_events_list(
+            config_path,
+            since,
+            until,
+            severity,
+            classification,
+            binary,
+            context,
+            &format,
+            limit,
+        ),
+        cli::EventsAction::Show { event_id } => {
+            run_events_show(config_path, &event_id)
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_events_list(
+    config_path: &str,
+    since: Option<String>,
+    until: Option<String>,
+    _severity: Option<String>,
+    classification: Option<String>,
+    binary: Option<String>,
+    context: Option<String>,
+    format: &str,
+    limit: usize,
+) -> Result<()> {
+    let config = load_config(config_path)?;
+    let data_dir = PathBuf::from(&config.daemon.data_dir);
+    let db_path = data_dir.join("events.db");
+
+    if !db_path.exists() {
+        anyhow::bail!(
+            "events database not found at {}. Is the daemon running?",
+            db_path.display()
+        );
+    }
+
+    let log = EventLog::open(&db_path)
+        .with_context(|| format!("opening events database: {}", db_path.display()))?;
+
+    let since_dt: Option<DateTime<Utc>> = since
+        .as_deref()
+        .map(|s| parse_datetime(s))
+        .transpose()
+        .context("invalid --since value")?;
+
+    let until_dt: Option<DateTime<Utc>> = until
+        .as_deref()
+        .map(|s| parse_datetime(s))
+        .transpose()
+        .context("invalid --until value")?;
+
+    let filter = EventFilter {
+        since: since_dt,
+        until: until_dt,
+        kind: None,
+        classification: classification.clone(),
+        binary: binary.clone(),
+        context: context.clone(),
+        limit,
+    };
+
+    let events = log.query_events(&filter)?;
+
+    if format == "json" {
+        // Clean JSON output -- no colors, no styling
+        let json = serde_json::to_string_pretty(&events)
+            .context("serializing events to JSON")?;
+        println!("{json}");
+        return Ok(());
+    }
+
+    // Table format
+    let term = console::Term::stdout();
+
+    if events.is_empty() {
+        term.write_line(&style::hint("No events found matching the given filters."))?;
+        return Ok(());
+    }
+
+    // Header
+    term.write_line(&format!(
+        "\n  {:<22} {:<16} {:<22} {}",
+        style("TIME").bold(),
+        style("TYPE").bold(),
+        style("BINARY").bold(),
+        style("CONTEXT").bold(),
+    ))?;
+
+    for event in &events {
+        let timestamp = event
+            .event
+            .timestamp
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        let kind = event_kind_short(&event.event.kind);
+        let binary_path = event
+            .event
+            .binary()
+            .unwrap_or("-")
+            .to_string();
+        let context_str = action_context_short(&event.context);
+
+        term.write_line(&format!(
+            "  {:<22} {:<16} {:<22} {}",
+            style(&timestamp).dim(),
+            kind,
+            binary_path,
+            style(context_str).dim(),
+        ))?;
+    }
+
+    term.write_line(&format!(
+        "\n  {}",
+        style(format!(
+            "Showing {} event{}",
+            events.len(),
+            if events.len() == 1 { "" } else { "s" }
+        ))
+        .dim()
+    ))?;
+    term.write_line("")?;
+
+    Ok(())
+}
+
+fn run_events_show(config_path: &str, event_id: &str) -> Result<()> {
+    let config = load_config(config_path)?;
+    let data_dir = PathBuf::from(&config.daemon.data_dir);
+    let db_path = data_dir.join("events.db");
+
+    if !db_path.exists() {
+        anyhow::bail!(
+            "events database not found at {}. Is the daemon running?",
+            db_path.display()
+        );
+    }
+
+    let log = EventLog::open(&db_path)
+        .with_context(|| format!("opening events database: {}", db_path.display()))?;
+
+    // Query all events and find the matching one
+    let filter = EventFilter {
+        limit: usize::MAX,
+        ..Default::default()
+    };
+    let events = log.query_events(&filter)?;
+    let event = events
+        .iter()
+        .find(|e| e.event.id.to_string() == event_id)
+        .ok_or_else(|| anyhow::anyhow!("event '{event_id}' not found"))?;
+
+    let json = serde_json::to_string_pretty(event)
+        .context("serializing event to JSON")?;
+    println!("{json}");
+    Ok(())
+}
+
+/// Parse a datetime string. Supports RFC3339 and simple date formats.
+fn parse_datetime(s: &str) -> Result<DateTime<Utc>> {
+    // Try RFC3339 first
+    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+        return Ok(dt.with_timezone(&Utc));
+    }
+    // Try simple date
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        let dt = date
+            .and_hms_opt(0, 0, 0)
+            .ok_or_else(|| anyhow::anyhow!("invalid date: {s}"))?;
+        return Ok(DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc));
+    }
+    // Try datetime without timezone
+    if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+        return Ok(DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc));
+    }
+    anyhow::bail!("cannot parse datetime: '{s}'. Use RFC3339, YYYY-MM-DD, or YYYY-MM-DD HH:MM:SS")
+}
+
+/// Short display name for an EventKind.
+fn event_kind_short(kind: &watchpost_types::EventKind) -> String {
+    match kind {
+        watchpost_types::EventKind::ProcessExec { .. } => "process_exec".to_string(),
+        watchpost_types::EventKind::ProcessExit { .. } => "process_exit".to_string(),
+        watchpost_types::EventKind::FileAccess { .. } => "file_access".to_string(),
+        watchpost_types::EventKind::NetworkConnect { .. } => "network".to_string(),
+        watchpost_types::EventKind::PrivilegeChange { .. } => "priv_change".to_string(),
+        watchpost_types::EventKind::DnsQuery { .. } => "dns_query".to_string(),
+        watchpost_types::EventKind::ScriptExec { .. } => "script_exec".to_string(),
+    }
+}
+
+/// Short display name for an ActionContext.
+fn action_context_short(ctx: &watchpost_types::ActionContext) -> String {
+    match ctx {
+        watchpost_types::ActionContext::PackageInstall {
+            ecosystem,
+            package_name,
+            ..
+        } => {
+            let pkg = package_name.as_deref().unwrap_or("?");
+            format!("{} install ({})", ecosystem.as_str(), pkg)
+        }
+        watchpost_types::ActionContext::Build { toolchain, .. } => {
+            format!("{toolchain} build")
+        }
+        watchpost_types::ActionContext::FlatpakApp { app_id, .. } => {
+            format!("flatpak ({app_id})")
+        }
+        watchpost_types::ActionContext::ToolboxSession {
+            container_name, ..
+        } => {
+            format!("toolbox ({container_name})")
+        }
+        watchpost_types::ActionContext::ShellCommand { .. } => "shell".to_string(),
+        watchpost_types::ActionContext::IdeOperation { ide_name, .. } => {
+            format!("ide ({ide_name})")
+        }
+        watchpost_types::ActionContext::Unknown => "unknown".to_string(),
     }
 }
 
@@ -195,7 +584,7 @@ fn handle_allowlist(action: cli::AllowlistAction, config: &WatchpostConfig) -> R
 }
 
 // ---------------------------------------------------------------------------
-// Gate handlers (stub — real implementation needs IPC to daemon)
+// Gate handlers (stub -- real implementation needs IPC to daemon)
 // ---------------------------------------------------------------------------
 
 fn handle_gate(action: cli::GateAction) -> Result<()> {
@@ -541,6 +930,74 @@ max_analyses_per_minute = 20
                 assert!(template.is_none());
             }
             _ => panic!("expected Init"),
+        }
+    }
+
+    #[test]
+    fn format_file_size_bytes() {
+        assert_eq!(super::format_file_size(500), "500 B");
+    }
+
+    #[test]
+    fn format_file_size_kb() {
+        let s = super::format_file_size(2048);
+        assert!(s.contains("KB"));
+    }
+
+    #[test]
+    fn format_file_size_mb() {
+        let s = super::format_file_size(2_500_000);
+        assert!(s.contains("MB"));
+    }
+
+    #[test]
+    fn format_number_with_commas() {
+        assert_eq!(super::format_number(0), "0");
+        assert_eq!(super::format_number(999), "999");
+        assert_eq!(super::format_number(1000), "1,000");
+        assert_eq!(super::format_number(12847), "12,847");
+        assert_eq!(super::format_number(1_000_000), "1,000,000");
+    }
+
+    #[test]
+    fn style_success_returns_non_empty() {
+        let s = super::style::success("test");
+        assert!(!s.is_empty());
+    }
+
+    #[test]
+    fn style_failure_returns_non_empty() {
+        let s = super::style::failure("test");
+        assert!(!s.is_empty());
+    }
+
+    #[test]
+    fn style_warning_returns_non_empty() {
+        let s = super::style::warning("test");
+        assert!(!s.is_empty());
+    }
+
+    #[test]
+    fn cli_parse_events_list_default_limit() {
+        use clap::Parser;
+        let cli = super::cli::Cli::parse_from(["watchpost", "events", "list"]);
+        match cli.command {
+            super::cli::Command::Events {
+                action: super::cli::EventsAction::List { limit, .. },
+            } => assert_eq!(limit, 50),
+            _ => panic!("expected Events List"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_events_list_custom_limit() {
+        use clap::Parser;
+        let cli = super::cli::Cli::parse_from(["watchpost", "events", "list", "--limit", "10"]);
+        match cli.command {
+            super::cli::Command::Events {
+                action: super::cli::EventsAction::List { limit, .. },
+            } => assert_eq!(limit, 10),
+            _ => panic!("expected Events List"),
         }
     }
 }

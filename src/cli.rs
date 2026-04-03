@@ -66,6 +66,9 @@ pub enum EventsAction {
         context: Option<String>,
         #[arg(long, default_value = "table")]
         format: String,
+        /// Maximum number of events to display
+        #[arg(long, default_value = "50")]
+        limit: usize,
     },
     /// Show details of a single event
     Show {
