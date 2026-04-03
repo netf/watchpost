@@ -1,0 +1,31 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: watchpost-reverse-shell
+spec:
+  kprobes:
+    - call: "tcp_connect"
+      syscall: false
+      args:
+        - index: 0
+          type: "sock"
+      selectors:
+        - matchActions:
+            - action: Post
+    - call: "__sys_dup3"
+      syscall: false
+      args:
+        - index: 0
+          type: "int"
+        - index: 1
+          type: "int"
+      selectors:
+        - matchArgs:
+            - index: 1
+              operator: InMap
+              values:
+                - "0"
+                - "1"
+                - "2"
+          matchActions:
+            - action: Post

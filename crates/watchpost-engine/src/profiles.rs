@@ -680,10 +680,168 @@ mod tests {
             count += 1;
         }
 
-        // 5 base + 3 toolchain = 8 total
+        // 5 base + 3 toolchain + 1 flatpak-escape + 3 network = 12 total
         assert!(
-            count >= 8,
-            "expected at least 8 TracingPolicy YAML files (5 base + 3 toolchain), found {count}"
+            count >= 11,
+            "expected at least 11 TracingPolicy YAML files (5 base + 3 toolchain + 3 network), found {count}"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Tests for network detection TracingPolicies
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn network_detection_policy_yaml_files_are_valid() {
+        let policies_dir =
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../policies"));
+
+        let network_policies = [
+            "reverse-shell.yaml",
+            "dns-exfil.yaml",
+            "crypto-miner.yaml",
+        ];
+
+        for filename in &network_policies {
+            let path = policies_dir.join(filename);
+            assert!(
+                path.exists(),
+                "network policy file should exist: {}",
+                path.display()
+            );
+
+            let contents = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("should read {}: {e}", path.display()));
+
+            let value: serde_yml::Value = serde_yml::from_str(&contents)
+                .unwrap_or_else(|e| panic!("{} should be valid YAML: {e}", path.display()));
+
+            // Check apiVersion and kind
+            assert_eq!(
+                value["apiVersion"].as_str(),
+                Some("cilium.io/v1alpha1"),
+                "{filename}: apiVersion should be cilium.io/v1alpha1"
+            );
+            assert_eq!(
+                value["kind"].as_str(),
+                Some("TracingPolicy"),
+                "{filename}: kind should be TracingPolicy"
+            );
+        }
+    }
+
+    #[test]
+    fn crypto_miner_policy_uses_sigkill() {
+        let policies_dir =
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../policies"));
+        let path = policies_dir.join("crypto-miner.yaml");
+
+        let contents = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("should read {}: {e}", path.display()));
+
+        let value: serde_yml::Value = serde_yml::from_str(&contents)
+            .unwrap_or_else(|e| panic!("crypto-miner.yaml should be valid YAML: {e}"));
+
+        let kprobes = &value["spec"]["kprobes"];
+        assert!(
+            kprobes.is_sequence(),
+            "crypto-miner.yaml: spec.kprobes should be a list"
+        );
+
+        let action = kprobes[0]["selectors"][0]["matchActions"][0]["action"]
+            .as_str()
+            .expect("crypto-miner.yaml: matchActions action should be a string");
+
+        assert_eq!(
+            action, "Sigkill",
+            "crypto-miner.yaml: should use Sigkill action to immediately kill mining processes"
+        );
+    }
+
+    #[test]
+    fn reverse_shell_policy_monitors_tcp_connect_and_dup3() {
+        let policies_dir =
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../policies"));
+        let path = policies_dir.join("reverse-shell.yaml");
+
+        let contents = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("should read {}: {e}", path.display()));
+
+        let value: serde_yml::Value = serde_yml::from_str(&contents)
+            .unwrap_or_else(|e| panic!("reverse-shell.yaml should be valid YAML: {e}"));
+
+        assert_eq!(
+            value["metadata"]["name"].as_str(),
+            Some("watchpost-reverse-shell"),
+            "reverse-shell.yaml: metadata.name should be watchpost-reverse-shell"
+        );
+
+        let kprobes = &value["spec"]["kprobes"];
+        assert!(
+            kprobes.is_sequence(),
+            "reverse-shell.yaml: spec.kprobes should be a list"
+        );
+
+        let kprobe_calls: Vec<&str> = kprobes
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .filter_map(|k| k["call"].as_str())
+            .collect();
+
+        assert!(
+            kprobe_calls.contains(&"tcp_connect"),
+            "reverse-shell.yaml: should monitor tcp_connect kprobe, found: {:?}",
+            kprobe_calls
+        );
+        assert!(
+            kprobe_calls.contains(&"__sys_dup3"),
+            "reverse-shell.yaml: should monitor __sys_dup3 kprobe, found: {:?}",
+            kprobe_calls
+        );
+    }
+
+    #[test]
+    fn dns_exfil_policy_monitors_port_53() {
+        let policies_dir =
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../policies"));
+        let path = policies_dir.join("dns-exfil.yaml");
+
+        let contents = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("should read {}: {e}", path.display()));
+
+        let value: serde_yml::Value = serde_yml::from_str(&contents)
+            .unwrap_or_else(|e| panic!("dns-exfil.yaml should be valid YAML: {e}"));
+
+        assert_eq!(
+            value["metadata"]["name"].as_str(),
+            Some("watchpost-dns-exfil"),
+            "dns-exfil.yaml: metadata.name should be watchpost-dns-exfil"
+        );
+
+        let kprobes = &value["spec"]["kprobes"];
+        assert!(
+            kprobes.is_sequence(),
+            "dns-exfil.yaml: spec.kprobes should be a list"
+        );
+
+        // The sendto kprobe should have a DPort selector matching port 53
+        let selector = &kprobes[0]["selectors"][0];
+        let match_args = selector["matchArgs"]
+            .as_sequence()
+            .expect("dns-exfil.yaml: should have matchArgs");
+
+        let has_port_53 = match_args.iter().any(|arg| {
+            arg["operator"].as_str() == Some("DPort")
+                && arg["values"]
+                    .as_sequence()
+                    .map(|vals| vals.iter().any(|v| v.as_str() == Some("53")))
+                    .unwrap_or(false)
+        });
+
+        assert!(
+            has_port_53,
+            "dns-exfil.yaml: should have a DPort selector matching port 53"
         );
     }
 }

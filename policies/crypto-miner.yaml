@@ -1,0 +1,22 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: watchpost-crypto-miner
+spec:
+  kprobes:
+    - call: "tcp_connect"
+      syscall: false
+      args:
+        - index: 0
+          type: "sock"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: DPort
+              values:
+                - "3333"
+                - "4444"
+                - "14444"
+                - "45700"
+          matchActions:
+            - action: Sigkill

@@ -1,0 +1,28 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: watchpost-dns-exfil
+spec:
+  kprobes:
+    - call: "sys_sendto"
+      syscall: true
+      args:
+        - index: 0
+          type: "int"
+        - index: 4
+          type: "sockaddr"
+      selectors:
+        - matchArgs:
+            - index: 4
+              operator: DPort
+              values:
+                - "53"
+          matchBinaries:
+            - operator: In
+              values:
+                - "/usr/bin/node"
+                - "/usr/bin/python3"
+                - "/usr/bin/curl"
+                - "/usr/bin/wget"
+          matchActions:
+            - action: Post
