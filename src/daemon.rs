@@ -219,29 +219,20 @@ pub async fn run_daemon(config: WatchpostConfig) -> Result<()> {
     // ---------------------------------------------------------------
     // 10. Wait for shutdown (SIGTERM / SIGINT / task failure)
     // ---------------------------------------------------------------
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
-            info!("received SIGINT, shutting down");
-        }
-        _ = collector_handle => {
-            warn!("collector task exited");
-        }
-        _ = engine_handle => {
-            warn!("engine task exited");
-        }
-        _ = rules_handle => {
-            warn!("rules task exited");
-        }
-        _ = analyzer_handle => {
-            warn!("analyzer task exited");
-        }
-        _ = merger_handle => {
-            warn!("verdict merger task exited");
-        }
-    }
+    // Wait for SIGINT (Ctrl+C) or SIGTERM
+    tokio::signal::ctrl_c().await.ok();
+    info!("received shutdown signal, stopping...");
 
-    // The notifier runs on a dedicated OS thread; it will stop when
-    // channels are dropped above.
+    // Abort all spawned tasks so their channel senders drop,
+    // which unblocks downstream receivers and the notifier thread.
+    collector_handle.abort();
+    engine_handle.abort();
+    rules_handle.abort();
+    analyzer_handle.abort();
+    merger_handle.abort();
+
+    // The notifier runs on a dedicated OS thread; it stops when
+    // its input channels close (which happens when the tasks above are aborted).
     let _ = notifier_handle.join();
 
     info!("watchpost daemon stopped");
