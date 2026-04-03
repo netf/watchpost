@@ -155,7 +155,9 @@ pub async fn run_daemon(config: WatchpostConfig) -> Result<()> {
         config.advanced.analyzer.analysis_queue_size,
     );
 
-    let notifier = Notifier::new(config.notify.desktop, &db_path)
+    let webhook_url = config.notify.webhook_url.clone();
+    let webhook_auth_header = config.notify.webhook_auth_header.clone();
+    let notifier = Notifier::new(config.notify.desktop, &db_path, webhook_url, webhook_auth_header)
         .context("failed to create Notifier")?;
 
     // ---------------------------------------------------------------

@@ -71,6 +71,7 @@ pub struct EnforcementConfig {
 pub struct NotifyConfig {
     pub desktop: bool,
     pub webhook_url: Option<String>,
+    pub webhook_auth_header: Option<String>,
 }
 
 impl Default for NotifyConfig {
@@ -78,6 +79,7 @@ impl Default for NotifyConfig {
         Self {
             desktop: true,
             webhook_url: None,
+            webhook_auth_header: None,
         }
     }
 }

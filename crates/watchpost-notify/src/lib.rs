@@ -1,5 +1,6 @@
 pub mod dbus;
 pub mod event_log;
+pub mod webhook;
 
 use std::path::Path;
 
@@ -10,12 +11,14 @@ use watchpost_types::{Classification, CorrelatedTrace, Verdict};
 
 use crate::dbus::DesktopNotifier;
 use crate::event_log::EventLog;
+use crate::webhook::WebhookForwarder;
 
 /// Central notification hub: persists verdicts and traces to the event log
 /// and sends desktop notifications for actionable verdicts.
 pub struct Notifier {
     desktop: DesktopNotifier,
     event_log: EventLog,
+    webhook: Option<WebhookForwarder>,
 }
 
 impl Notifier {
@@ -23,14 +26,27 @@ impl Notifier {
     ///
     /// - `desktop_enabled`: whether to send D-Bus desktop notifications
     /// - `db_path`: path to the SQLite database for the event log
-    pub fn new(desktop_enabled: bool, db_path: &Path) -> Result<Self> {
+    /// - `webhook_url`: optional URL for webhook forwarding of verdicts
+    /// - `webhook_auth_header`: optional Authorization header value (e.g. "Bearer sk-...")
+    pub fn new(
+        desktop_enabled: bool,
+        db_path: &Path,
+        webhook_url: Option<String>,
+        webhook_auth_header: Option<String>,
+    ) -> Result<Self> {
         let event_log =
             EventLog::open(db_path).context("failed to open event log for Notifier")?;
         let desktop = DesktopNotifier::new(desktop_enabled);
 
+        let webhook = webhook_url.map(|url| {
+            info!(url = %url, "Webhook forwarding enabled");
+            WebhookForwarder::new(url, webhook_auth_header)
+        });
+
         Ok(Self {
             desktop,
             event_log,
+            webhook,
         })
     }
 
@@ -105,6 +121,11 @@ impl Notifier {
                 let _ = self.desktop.notify_blocked(verdict).await;
             }
         }
+
+        // Best-effort webhook forwarding — errors are logged internally
+        if let Some(ref wh) = self.webhook {
+            let _ = wh.forward(verdict).await;
+        }
     }
 
     fn handle_trace(&self, trace: &CorrelatedTrace) {
@@ -165,5 +186,12 @@ mod tests {
             timestamp: Utc::now(),
         };
         assert_eq!(infer_source(&verdict), "analyzer");
+    }
+
+    #[test]
+    fn notifier_works_without_webhook() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let notifier = Notifier::new(false, tmp.path(), None, None).unwrap();
+        assert!(notifier.webhook.is_none());
     }
 }
