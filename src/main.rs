@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = cli::Cli::parse();
 
     match cli.command {
-        cli::Command::Init { api_key } => init::run_init(api_key).await,
+        cli::Command::Init { api_key, template } => init::run_init(api_key, template).await,
         cli::Command::Daemon => {
             let config = load_config(&cli.config)?;
             daemon::run_daemon(config).await
@@ -217,7 +217,7 @@ fn handle_gate(action: cli::GateAction) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use watchpost_types::WatchpostConfig;
+    use watchpost_types::{PolicyTemplate, WatchpostConfig};
 
     #[test]
     fn cli_help_does_not_panic() {
@@ -436,5 +436,111 @@ max_analyses_per_minute = 20
         assert_eq!(config.advanced.engine.llm_threshold, 0.4);
         assert_eq!(config.advanced.analyzer.model, "claude-sonnet-4-20250514");
         assert_eq!(config.advanced.analyzer.max_analyses_per_minute, 20);
+    }
+
+    // -----------------------------------------------------------------------
+    // Policy template tests
+    // -----------------------------------------------------------------------
+
+    fn load_template_yaml(name: &str) -> PolicyTemplate {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("templates")
+            .join(format!("{name}.yaml"));
+        let contents = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
+        serde_yml::from_str(&contents)
+            .unwrap_or_else(|e| panic!("parsing {}: {e}", path.display()))
+    }
+
+    #[test]
+    fn template_web_developer_parses() {
+        let tpl = load_template_yaml("web-developer");
+        assert_eq!(tpl.name, "web-developer");
+        assert!(!tpl.description.is_empty());
+        assert!(!tpl.policies.is_empty());
+    }
+
+    #[test]
+    fn template_systems_developer_parses() {
+        let tpl = load_template_yaml("systems-developer");
+        assert_eq!(tpl.name, "systems-developer");
+        assert!(!tpl.description.is_empty());
+        assert!(!tpl.policies.is_empty());
+    }
+
+    #[test]
+    fn template_minimal_parses() {
+        let tpl = load_template_yaml("minimal");
+        assert_eq!(tpl.name, "minimal");
+        assert!(!tpl.description.is_empty());
+        assert!(!tpl.policies.is_empty());
+    }
+
+    #[test]
+    fn template_web_developer_includes_npm_not_cargo() {
+        let tpl = load_template_yaml("web-developer");
+        assert!(
+            tpl.policies.contains(&"npm-monitoring.yaml".to_string()),
+            "web-developer should include npm-monitoring"
+        );
+        assert!(
+            !tpl.policies.contains(&"cargo-monitoring.yaml".to_string()),
+            "web-developer should not include cargo-monitoring"
+        );
+    }
+
+    #[test]
+    fn template_systems_developer_includes_cargo_not_npm() {
+        let tpl = load_template_yaml("systems-developer");
+        assert!(
+            tpl.policies
+                .contains(&"cargo-monitoring.yaml".to_string()),
+            "systems-developer should include cargo-monitoring"
+        );
+        assert!(
+            !tpl.policies.contains(&"npm-monitoring.yaml".to_string()),
+            "systems-developer should not include npm-monitoring"
+        );
+    }
+
+    #[test]
+    fn template_minimal_has_five_or_fewer_policies() {
+        let tpl = load_template_yaml("minimal");
+        assert!(
+            tpl.policies.len() <= 5,
+            "minimal template should have at most 5 policies, got {}",
+            tpl.policies.len()
+        );
+    }
+
+    #[test]
+    fn cli_parse_init_with_template() {
+        use clap::Parser;
+        let cli = super::cli::Cli::parse_from([
+            "watchpost",
+            "init",
+            "--template",
+            "web-developer",
+        ]);
+        match cli.command {
+            super::cli::Command::Init { api_key, template } => {
+                assert!(api_key.is_none());
+                assert_eq!(template.as_deref(), Some("web-developer"));
+            }
+            _ => panic!("expected Init"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_init_without_template() {
+        use clap::Parser;
+        let cli = super::cli::Cli::parse_from(["watchpost", "init"]);
+        match cli.command {
+            super::cli::Command::Init { api_key, template } => {
+                assert!(api_key.is_none());
+                assert!(template.is_none());
+            }
+            _ => panic!("expected Init"),
+        }
     }
 }

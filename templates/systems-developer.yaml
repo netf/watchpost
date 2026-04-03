@@ -1,0 +1,12 @@
+name: systems-developer
+description: "For systems developers working with Rust, C/C++, and kernel development"
+policies:
+  - immutability.yaml
+  - sensitive-files.yaml
+  - priv-escalation.yaml
+  - tmp-execution.yaml
+  - install-script-gate.yaml
+  - cargo-monitoring.yaml
+  - reverse-shell.yaml
+  - dns-exfil.yaml
+  - crypto-miner.yaml

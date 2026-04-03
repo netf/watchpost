@@ -24,3 +24,11 @@ pub struct TracingPolicySpec {
     /// The raw YAML content of the Tetragon tracing policy.
     pub yaml_content: String,
 }
+
+/// A policy template that bundles a set of TracingPolicies for a specific use case.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PolicyTemplate {
+    pub name: String,
+    pub description: String,
+    pub policies: Vec<String>,
+}

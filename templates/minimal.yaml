@@ -1,0 +1,8 @@
+name: minimal
+description: "Base security policies only — no toolchain-specific monitoring"
+policies:
+  - immutability.yaml
+  - sensitive-files.yaml
+  - priv-escalation.yaml
+  - tmp-execution.yaml
+  - crypto-miner.yaml

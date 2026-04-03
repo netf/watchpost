@@ -17,6 +17,8 @@ pub enum Command {
     Init {
         #[arg(long)]
         api_key: Option<String>,
+        #[arg(long)]
+        template: Option<String>,
     },
     /// Start the daemon (for systemd)
     Daemon,

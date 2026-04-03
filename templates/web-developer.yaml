@@ -1,0 +1,18 @@
+name: web-developer
+description: "For web developers working with npm, Node.js, and Python"
+policies:
+  # Base policies (always included)
+  - immutability.yaml
+  - sensitive-files.yaml
+  - priv-escalation.yaml
+  - tmp-execution.yaml
+  - install-script-gate.yaml
+  # Toolchain monitoring
+  - npm-monitoring.yaml
+  - pip-monitoring.yaml
+  # Network detection
+  - reverse-shell.yaml
+  - dns-exfil.yaml
+  - crypto-miner.yaml
+  # Sandbox monitoring
+  - flatpak-escape.yaml

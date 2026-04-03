@@ -2937,6 +2937,7 @@ dependencies = [
  "libc",
  "sd-notify",
  "serde",
+ "serde_yml",
  "tokio",
  "toml",
  "tracing",
